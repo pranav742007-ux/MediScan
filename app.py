@@ -162,7 +162,9 @@ class CursorWrapper:
 
     def execute(self, query, args=()):
         if self.is_postgres:
-            q = query.replace("AUTOINCREMENT", "SERIAL").replace("?", "%s")
+            # Better replacement logic for Postgres compatibility
+            q = query.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+            q = q.replace("?", "%s")
             is_insert = q.strip().upper().startswith("INSERT")
             needs_ret = is_insert and ("users" in q.lower() or "medicines" in q.lower())
             if needs_ret and "RETURNING" not in q:
@@ -231,106 +233,112 @@ def close_db(error):
 def init_db():
     """Initializes the database schema with production-grade safety."""
     conn = get_db_connection()
-    c = conn.cursor()
-    # User Table
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            role TEXT DEFAULT 'user',
-            profile_data TEXT DEFAULT '{}'
-        )
-    """
-    )
-    # Medicine Table
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS medicines (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            strength TEXT,
-            brands TEXT,
-            category TEXT,
-            safety TEXT,
-            uses TEXT,
-            dosage TEXT,
-            sideEffects TEXT,
-            warnings TEXT,
-            disposal TEXT,
-            mfg_date TEXT,
-            exp_date TEXT,
-            keywords TEXT,
-            company_id INTEGER
-        )
-    """
-    )
-    # Scan History Table for Single-Use Serialization (Anti-cloning)
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS scan_history (
-            serial_no TEXT PRIMARY KEY,
-            short_code TEXT UNIQUE,
-            med_id INTEGER,
-            first_scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            scan_count INTEGER DEFAULT 1
-        )
-    """
-    )
-
-    # Safely try to alter an old table to add new columns if they don't exist
     try:
-        c.execute("ALTER TABLE scan_history ADD COLUMN short_code TEXT UNIQUE")
-    except Exception:
-        pass
-    try:
-        c.execute("ALTER TABLE scan_history ADD COLUMN med_id INTEGER")
-    except Exception:
-        pass
-
-    try:
-        c.execute("ALTER TABLE medicines ADD COLUMN disposal TEXT")
-    except Exception:
-        pass
-    try:
-        c.execute("ALTER TABLE medicines ADD COLUMN mfg_date TEXT")
-    except Exception:
-        pass
-    try:
-        c.execute("ALTER TABLE medicines ADD COLUMN exp_date TEXT")
-    except Exception:
-        pass
-
-    # Check if medicines table is empty
-    c.execute("SELECT COUNT(*) FROM medicines")
-    if c.fetchone()[0] == 0:
-        # Seed it with the default static list MEDS
-        for med in MEDS:
-            c.execute(
-                """
-                INSERT INTO medicines (name, strength, brands, category, safety, uses, dosage, sideEffects, warnings, disposal, keywords, company_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    med.get("name", ""),
-                    med.get("strength", ""),
-                    json.dumps(med.get("brands", []), ensure_ascii=False),
-                    med.get("category", ""),
-                    med.get("safety", "safe"),
-                    med.get("uses", ""),
-                    med.get("dosage", ""),
-                    med.get("sideEffects", ""),
-                    med.get("warnings", ""),
-                    med.get("disposal", ""),
-                    json.dumps(med.get("keywords", []), ensure_ascii=False),
-                    0,
-                ),
+        c = conn.cursor()
+        # User Table
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                role TEXT DEFAULT 'user',
+                profile_data TEXT DEFAULT '{}'
             )
+        """
+        )
+        # Medicine Table
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS medicines (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                strength TEXT,
+                brands TEXT,
+                category TEXT,
+                safety TEXT,
+                uses TEXT,
+                dosage TEXT,
+                sideEffects TEXT,
+                warnings TEXT,
+                disposal TEXT,
+                mfg_date TEXT,
+                exp_date TEXT,
+                keywords TEXT,
+                company_id INTEGER
+            )
+        """
+        )
+        # Scan History Table for Single-Use Serialization (Anti-cloning)
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS scan_history (
+                serial_no TEXT PRIMARY KEY,
+                short_code TEXT UNIQUE,
+                med_id INTEGER,
+                first_scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                scan_count INTEGER DEFAULT 1
+            )
+        """
+        )
 
-    conn.commit()
-    conn.close()
+        # Safely try to alter an old table to add new columns if they don't exist
+        try:
+            c.execute("ALTER TABLE scan_history ADD COLUMN short_code TEXT UNIQUE")
+        except Exception:
+            pass
+        try:
+            c.execute("ALTER TABLE scan_history ADD COLUMN med_id INTEGER")
+        except Exception:
+            pass
+
+        try:
+            c.execute("ALTER TABLE medicines ADD COLUMN disposal TEXT")
+        except Exception:
+            pass
+        try:
+            c.execute("ALTER TABLE medicines ADD COLUMN mfg_date TEXT")
+        except Exception:
+            pass
+        try:
+            c.execute("ALTER TABLE medicines ADD COLUMN exp_date TEXT")
+        except Exception:
+            pass
+
+        # Check if medicines table is empty
+        c.execute("SELECT COUNT(*) FROM medicines")
+        if c.fetchone()[0] == 0:
+            # Seed it with the default static list MEDS
+            for med in MEDS:
+                c.execute(
+                    """
+                    INSERT INTO medicines (name, strength, brands, category, safety, uses, dosage, sideEffects, warnings, disposal, keywords, company_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        med.get("name", ""),
+                        med.get("strength", ""),
+                        json.dumps(med.get("brands", []), ensure_ascii=False),
+                        med.get("category", ""),
+                        med.get("safety", "safe"),
+                        med.get("uses", ""),
+                        med.get("dosage", ""),
+                        med.get("sideEffects", ""),
+                        med.get("warnings", ""),
+                        med.get("disposal", ""),
+                        json.dumps(med.get("keywords", []), ensure_ascii=False),
+                        0,
+                    ),
+                )
+
+        conn.commit()
+    except Exception as e:
+        if conn.is_postgres:
+            conn.conn.rollback()
+        print(f"Database init warning/error: {e}")
+    finally:
+        conn.close()
 
 
 # ===== Medicine Database =====
