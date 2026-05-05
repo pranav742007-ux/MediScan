@@ -180,7 +180,8 @@ class CursorWrapper:
             if needs_ret:
                 row = self.cursor.fetchone()
                 if row:
-                    self.lastrowid = row['id'] if 'id' in row else row[0]
+                    # Capture the ID from the RETURNING clause safely
+                    self.lastrowid = row['id'] if isinstance(row, dict) else row[0]
         else:
             self.cursor.execute(query, args)
             self.lastrowid = getattr(self.cursor, "lastrowid", None)
@@ -770,12 +771,12 @@ def add_security_headers(response):
 
 @app.route("/")
 def serve_index():
-    return render_template("mediscan.html")
+    return render_template("mediscan.html", google_client_id=os.environ.get("GOOGLE_CLIENT_ID"))
 
 
 @app.route("/company")
 def serve_company():
-    return render_template("company.html")
+    return render_template("company.html", google_client_id=os.environ.get("GOOGLE_CLIENT_ID"))
 
 
 @app.route("/api/search", methods=["POST"])
@@ -984,7 +985,8 @@ def api_upload_medicine():
         med_id = c.lastrowid
         conn.commit()
     except Exception as e:
-        return jsonify({"error": "Database write failed"}), 500
+        print(f"CRITICAL: Database write failed: {e}")
+        return jsonify({"error": f"Database write failed: {e}"}), 500
 
     return jsonify({"ok": True, "medicine_id": med_id})
 
