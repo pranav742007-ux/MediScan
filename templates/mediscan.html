@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5">
+<title>MediScan - Medicine Info Lookup</title>
+<meta name="description" content="Look up medicine details, check dosage and side effects, set pill reminders and generate prescription QR codes.">
+<meta name="theme-color" content="#0F766E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230D9488'/%3E%3Ctext x='50' y='68' text-anchor='middle' font-size='50' fill='white'%3E💊%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="manifest" href="/static/manifest.json">
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/static/sw.js');
+    });
+  }
+</script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+<!-- toast notification -->
+<div class="toastMsg" id="toast"></div>
+
+<!-- camera scanner overlay (google lens style) -->
+<div id="cameraOverlay">
+  <div class="cam-video-wrap">
+    <video id="camVideo" autoplay playsinline muted></video>
+    <div class="cam-flash" id="camFlash"></div>
+    <div class="cam-hint">&#128248; Point camera at medicine label or QR code</div>
+    <div class="viewfinder">
+      <div class="vf-corner tl"></div>
+      <div class="vf-corner tr"></div>
+      <div class="vf-corner bl"></div>
+      <div class="vf-corner br"></div>
+      <div class="scanLine"></div>
+    </div>
+    <!-- preview after capture -->
+    <div class="cam-preview" id="camPreview">
+      <img id="camPreviewImg" src="" alt="captured">
+      <div class="cam-preview-bar">
+        <button class="cam-preview-btn retake" onclick="retakePhoto()">Retake</button>
+        <button class="cam-preview-btn use" onclick="usePhoto()">&#128269; Search This</button>
+      </div>
+    </div>
+  </div>
+  <div class="cam-bottom">
+    <div style="text-align:center">
+      <button class="cam-btn" onclick="closeCamera()">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+      <div class="cam-label">Close</div>
+    </div>
+    <div style="text-align:center">
+      <button class="cam-capture" id="captureBtn" onclick="capturePhoto()"></button>
+      <div class="cam-label">Capture</div>
+    </div>
+    <div style="text-align:center">
+      <button class="cam-btn" id="flipBtn" onclick="flipCamera()">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+      </button>
+      <div class="cam-label">Flip</div>
+    </div>
+  </div>
+</div>
+<canvas id="camCanvas" style="display:none"></canvas>
+<!-- ====== LOGIN / REGISTER ====== -->
+<div class="screen active" id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-box">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
+        </svg>
+      </div>
+      <h2>MediScan</h2>
+      <p>Medicine Info &amp; Safety Checker</p>
+    </div>
+
+    <div class="login-tabs">
+      <button class="login-tab on" id="loginTabSign" onclick="switchLoginMode('signin')">Sign In</button>
+      <button class="login-tab" id="loginTabReg" onclick="switchLoginMode('register')">Register</button>
+    </div>
+
+    <div id="loginError" class="login-error"></div>
+    <div id="loginSuccess" class="login-success"></div>
+
+    <!-- sign in form -->
+    <div id="signinForm" class="login-form">
+      <div class="login-field">
+        <label>Email</label>
+        <input type="email" id="signEmail" placeholder="your@email.com">
+      </div>
+      <div class="login-field">
+        <label>Password</label>
+        <input type="password" id="signPass" placeholder="Enter password">
+      </div>
+      <button class="loginBtn" onclick="doSignIn()">Sign In</button>
+    </div>
+
+    <!-- register form -->
+    <div id="registerForm" class="login-form" style="display:none;">
+      <div class="login-field">
+        <label>Full Name</label>
+        <input type="text" id="regName" placeholder="Your full name">
+      </div>
+      <div class="login-field">
+        <label>Email</label>
+        <input type="email" id="regEmail" placeholder="your@email.com">
+      </div>
+      <div class="login-field">
+        <label>Password</label>
+        <input type="password" id="regPass" placeholder="Create a password">
+      </div>
+      <div class="login-field">
+        <label>Confirm Password</label>
+        <input type="password" id="regConfirm" placeholder="Confirm password">
+      </div>
+      <button class="loginBtn" onclick="doRegister()">Create Account</button>
+    </div>
+
+    <div class="login-divider">or continue with</div>
+
+    <button class="googleBtn" onclick="doGoogleLogin()">
+      <svg width="18" height="18" viewBox="0 0 18 18" style="margin-right:10px;"><path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4"/><path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/><path d="M3.964 10.712c-.18-.54-.282-1.117-.282-1.712s.102-1.173.282-1.712V4.956H.957a8.993 8.993 0 000 8.088l3.007-2.332z" fill="#FBBC05"/><path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.582C13.463.891 11.426 0 9 0 5.483 0 2.457 2.048.957 4.956l3.007 2.332C4.672 5.164 6.656 3.58 9 3.58z" fill="#EA4335"/></svg>
+      Continue with Google
+    </button>
+
+    <div class="login-footer" id="loginFooter">
+      Don't have an account? <a onclick="switchLoginMode('register')">Register here</a>
+    </div>
+  </div>
+</div>
+<div id="loadingOverlay" class="hidden">
+  <div class="loadCard">
+    <div class="loadSpinner">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
+      </svg>
+    </div>
+    <div class="loadTitle">Analyzing Medicine</div>
+    <div class="loadMsg" id="loadMsg">Starting scan...</div>
+    <div class="loadSteps">
+      <div class="loadStep" id="ls1"><span class="stepDot"></span>Barcode detection</div>
+      <div class="loadStep" id="ls2"><span class="stepDot"></span>Text analysis</div>
+      <div class="loadStep" id="ls3"><span class="stepDot"></span>Database search</div>
+      <div class="loadStep" id="ls4"><span class="stepDot"></span>Safety analysis</div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== SPLASH ====== -->
+<div class="screen" id="splashScreen">
+  <div class="splash-orb"></div>
+  <div class="splash-orb-2"></div>
+  <div class="splash-inner">
+    <div class="splash-logo">
+      <svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="1.8">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
+      </svg>
+    </div>
+    <div class="splash-title syne">MediScan</div>
+    <div class="splash-sub">Medicine Info & Safety Checker</div>
+    <div class="splash-loader">
+      <div class="splash-track"><div class="splash-fill"></div></div>
+      <div class="splash-hint">Loading medicine database...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== HOME ====== -->
+<div class="screen" id="homeScreen">
+  <div class="floatingPills">
+    <div class="fpill fp1"></div>
+    <div class="fpill fp2"></div>
+    <div class="fpill fp3"></div>
+    <div class="fpill fp4"></div>
+    <div class="fpill fp5"></div>
+  </div>
+  <nav class="topBar">
+    <div class="topBar-brand">
+      <div class="topBar-icon"><svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg></div>
+      <span class="topBar-title">MediScan</span>
+    </div>
+    <div class="topBar-nav">
+      <span class="userBadge" id="userBadgeHome"><span class="userDot"></span><span id="userNameHome"></span></span>
+      <button class="navBtn current" onclick="goTo('homeScreen')">&#127968; Home</button>
+      <button class="navBtn" onclick="goTo('scanScreen')">&#128269; Scan</button>
+      <button class="navBtn" onclick="goTo('reminderScreen')">&#9200; Reminders</button>
+      <button class="navBtn" onclick="goTo('profileScreen')">&#128100; Profile</button>
+      <button class="logoutBtn" onclick="doLogout()">Logout</button>
+    </div>
+  </nav>
+  <div class="pageWrap">
+    <div class="heroBox">
+      <div class="hero-tag">&#128138; MediScan v1.2.0</div>
+      <h1 class="hero-heading syne">Look up medicine details &amp; safety info</h1>
+      <div class="hero-desc">Enter a medicine name or brand to see dosage, side effects, warnings and more. You can also set pill reminders.</div>
+      <button class="scanStartBtn" onclick="goTo('scanScreen')">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-4.35-4.35"/></svg>
+        Search Medicine
+      </button>
+    </div>
+
+    <div class="statsRow">
+      <div class="stat-box"><div class="stat-num" id="statNetworkMeds">-</div><div class="stat-lbl">Global Medicines</div></div>
+      <div class="stat-box"><div class="stat-num" id="statNetworkScans">-</div><div class="stat-lbl">Network Verifications</div></div>
+      <div class="stat-box"><div class="stat-num" id="statReminders">0</div><div class="stat-lbl">My Reminders</div></div>
+    </div>
+
+    <div class="disclaimer">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      <p><strong>Disclaimer:</strong> This is a public prototype. The medical information provided is sourced from available databases and should not be used as a substitute for professional medical advice. Always consult your doctor before taking any medication.</p>
+    </div>
+
+    <div class="section-head syne" style="display:flex;align-items:center;justify-content:space-between;">
+      Recent Scans
+      <button class="clearAllBtn" id="clearAllBtn" onclick="clearAllHistory()" style="display:none;">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        Clear All
+      </button>
+    </div>
+    <div class="historyList" id="historyList">
+      <div class="emptyBox"><div class="emptyIco">&#128138;</div><div class="emptyTxt">Nothing here yet.<br>Go to the <strong>Search</strong> page to look up a medicine!</div></div>
+    </div>
+
+    <footer class="appFooter">
+      <p>MediScan v1.2.0 &mdash; Securing global medicine supply chains</p>
+      <p>Built with &#10084;&#65039; for public health security</p>
+    </footer>
+  </div>
+</div>
+
+<!-- ====== SCAN ====== -->
+<div class="screen" id="scanScreen">
+  <nav class="topBar">
+    <div class="topBar-brand">
+      <div class="topBar-icon"><svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg></div>
+      <span class="topBar-title">MediScan</span>
+    </div>
+    <div class="topBar-nav">
+      <button class="navBtn" onclick="goTo('homeScreen')">&#127968; Home</button>
+      <button class="navBtn current" onclick="goTo('scanScreen')">&#128269; Scan</button>
+      <button class="navBtn" onclick="goTo('reminderScreen')">&#9200; Reminders</button>
+      <button class="navBtn" onclick="goTo('profileScreen')">&#128100; Profile</button>
+      <button class="logoutBtn" onclick="doLogout()">Logout</button>
+    </div>
+  </nav>
+  <div class="pageWrap">
+    <div class="scan-head">
+      <h2 class="syne">Medicine Lookup</h2>
+      <p>Type a medicine name, use the camera scanner, or try barcode / manual search</p>
+    </div>
+
+    <!-- camera launch button -->
+    <div class="camLaunchCard" onclick="openCamera()">
+      <div class="camLaunchIcon">
+        <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3"/></svg>
+      </div>
+      <div class="camLaunchText">
+        <div class="camLaunchTitle">&#128247; Open Camera Scanner</div>
+        <div class="camLaunchSub">Scan medicine labels or QR codes with your camera</div>
+      </div>
+      <svg class="camLaunchArrow" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.6)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </div>
+
+    <div class="scanArea">
+      <div class="tabRow">
+        <button class="tabItem on" id="tabText" onclick="switchTab('text')">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7"/></svg>
+          Text Search
+        </button>
+        <button class="tabItem" id="tabBarcode" onclick="switchTab('barcode')">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8H3m2 8H3m18-8h-2m2 8h-2"/></svg>
+          Barcode
+        </button>
+        <button class="tabItem" id="tabManual" onclick="switchTab('manual')">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          Manual
+        </button>
+      </div>
+
+      <!-- text tab -->
+      <div id="panelText">
+        <div class="textPanel">
+          <label>Paste medicine label text or name</label>
+          <textarea class="scanInput" id="ocrInput" placeholder="e.g. Paracetamol 500mg, Crocin, Dolo 650, Amoxicillin 500, Brufen 400mg..."></textarea>
+          <div style="margin-top:10px;font-size:13px;color:var(--txt3);font-weight:600;">Try an example:</div>
+          <div class="chipRow">
+            <span class="chip" onclick="fillExample('Paracetamol 500mg tablet')">Paracetamol 500mg</span>
+            <span class="chip" onclick="fillExample('Crocin pain relief')">Crocin</span>
+            <span class="chip" onclick="fillExample('Brufen 400')">Brufen 400</span>
+            <span class="chip" onclick="fillExample('Amoxil 500')">Amoxil 500</span>
+            <span class="chip" onclick="fillExample('Zyrtec cetirizine')">Zyrtec</span>
+            <span class="chip" onclick="fillExample('Omez omeprazole')">Omez</span>
+            <span class="chip" onclick="fillExample('Lipitor atorvastatin 10mg')">Lipitor</span>
+            <span class="chip" onclick="fillExample('Dolo 650')">Dolo 650</span>
+            <span class="chip" onclick="fillExample('Ecosprin 75')">Ecosprin 75</span>
+          </div>
+        </div>
+        <div class="uploadBox" id="uploadZone" onclick="document.getElementById('fileInput').click()" ondragover="doDragOver(event)" ondragleave="doDragLeave(event)" ondrop="doDrop(event)">
+          <div class="ico">&#128248;</div>
+          <p><strong>Drop a medicine label image here</strong><br>or click to upload (JPG, PNG, WebP)</p>
+        </div>
+        <input type="file" id="fileInput" accept="image/*" onchange="handleFile(event)">
+      </div>
+
+      <!-- barcode tab -->
+      <div id="panelBarcode" class="hidden">
+        <div class="fGroup">
+          <label>Enter Barcode / Short Code</label>
+          <div class="barcodeWrap">
+            <input type="text" class="fControl" id="barcodeInput" placeholder="e.g. MED-A1B2C or 8901030862534" maxlength="20">
+            <button class="goBtn" style="width:auto;padding:12px 20px;margin-top:0;font-size:14px;" onclick="runBarcodeSearch()">Search</button>
+          </div>
+          <div style="margin-top:10px;font-size:13px;color:var(--txt3);">&#128161; Enter the short code from the barcode on the medicine box (e.g. MED-A1B2C)</div>
+        </div>
+      </div>
+
+      <!-- manual tab -->
+      <div id="panelManual" class="hidden">
+        <div style="background:var(--warn-bg);border:1px solid #FDE68A;border-radius:12px;padding:14px 16px;margin-bottom:18px;font-size:13px;color:#92400E;">
+          &#9888;&#65039; <strong>Fallback mode</strong> - Use this when scanning fails. Describe the tablet's physical appearance.
+        </div>
+        <div class="manualForm">
+          <div class="fRow">
+            <div class="fGroup">
+              <label>Tablet Color</label>
+              <select class="selectBox" id="manualColor">
+                <option value="">Select color</option>
+                <option>White</option><option>Yellow</option><option>Orange</option>
+                <option>Pink</option><option>Red</option><option>Blue</option>
+                <option>Green</option><option>Brown</option><option>Purple</option><option>Other</option>
+              </select>
+            </div>
+            <div class="fGroup">
+              <label>Tablet Shape</label>
+              <select class="selectBox" id="manualShape">
+                <option value="">Select shape</option>
+                <option>Round</option><option>Oval</option><option>Capsule</option>
+                <option>Oblong</option><option>Diamond</option><option>Other</option>
+              </select>
+            </div>
+          </div>
+          <div class="fGroup">
+            <label>Imprint / Text on Tablet</label>
+            <input type="text" class="fControl" id="manualImprint" placeholder="e.g. P500, PARA, CROCIN, IP 500...">
+          </div>
+        </div>
+      </div>
+
+      <button class="goBtn" id="scanGoBtn" onclick="runScan()">
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-4.35-4.35"/></svg>
+        Search
+      </button>
+    </div>
+
+    <div class="disclaimer">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      <p><strong>Note:</strong> This project uses a local database of 100+ common medicines. Results may not cover all drugs. Always verify with a pharmacist or doctor.</p>
+    </div>
+
+    <footer class="appFooter">
+      <p>MediScan v1.2.0 &mdash; A student project for educational purposes</p>
+    </footer>
+  </div>
+</div>
+
+<!-- ====== RESULT ====== -->
+<div class="screen" id="resultScreen">
+  <nav class="topBar">
+    <div class="topBar-brand">
+      <button class="navBtn" onclick="goTo('scanScreen')" style="padding:6px 10px;">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg> Back
+      </button>
+      <span class="topBar-title" style="margin-left:6px;">Result</span>
+    </div>
+    <div class="topBar-nav">
+      <button class="navBtn" onclick="goTo('homeScreen')">&#127968; Home</button>
+      <button class="navBtn" onclick="goTo('scanScreen')">&#128269; Scan Again</button>
+    </div>
+  </nav>
+  <div class="pageWrap" id="resultContent"></div>
+</div>
+
+<!-- ====== WARNING ====== -->
+<div class="screen" id="warnScreen">
+  <nav class="topBar">
+    <div class="topBar-brand">
+      <button class="navBtn" onclick="goTo('scanScreen')" style="padding:6px 10px;">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg> Back
+      </button>
+      <span class="topBar-title" style="margin-left:6px;">Not Identified</span>
+    </div>
+    <div class="topBar-nav">
+      <button class="navBtn" onclick="goTo('homeScreen')">&#127968; Home</button>
+    </div>
+  </nav>
+  <div class="pageWrap" id="warnContent"></div>
+</div>
+
+<!-- ====== REMINDERS ====== -->
+<div class="screen" id="reminderScreen">
+  <nav class="topBar">
+    <div class="topBar-brand">
+      <div class="topBar-icon"><svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg></div>
+      <span class="topBar-title">MediScan</span>
+    </div>
+    <div class="topBar-nav">
+      <button class="navBtn" onclick="goTo('homeScreen')">&#127968; Home</button>
+      <button class="navBtn" onclick="goTo('scanScreen')">&#128269; Scan</button>
+      <button class="navBtn current" onclick="goTo('reminderScreen')">&#9200; Reminders</button>
+      <button class="navBtn" onclick="goTo('profileScreen')">&#128100; Profile</button>
+      <button class="logoutBtn" onclick="doLogout()">Logout</button>
+    </div>
+  </nav>
+  <div class="pageWrap">
+    <div class="scan-head">
+      <h2 class="syne">Pill Reminders</h2>
+      <p>Add reminders so you don't forget your doses</p>
+    </div>
+    <div class="reminderForm">
+      <h3>+ Add New Reminder</h3>
+      <div class="fRow">
+        <div class="fGroup"><label>Medicine Name</label><input type="text" class="fControl" id="rName" placeholder="e.g. Paracetamol"></div>
+        <div class="fGroup"><label>Dosage</label><input type="text" class="fControl" id="rDose" placeholder="e.g. 500mg after food"></div>
+      </div>
+      <div class="timeRow">
+        <div class="fGroup"><label>Time</label><input type="time" class="fControl" id="rTime" value="08:00"></div>
+        <div class="fGroup">
+          <label>Frequency</label>
+          <select class="selectBox" id="rFreq">
+            <option>Once daily</option><option>Twice daily</option><option>Three times daily</option><option>As needed</option>
+          </select>
+        </div>
+      </div>
+      <button class="addReminderBtn" onclick="addReminder()">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        Add Reminder
+      </button>
+    </div>
+    <div class="section-head syne">Active Reminders</div>
+    <div class="reminderList" id="reminderList">
+      <div class="emptyBox"><div class="emptyIco">&#9200;</div><div class="emptyTxt">No reminders set yet.<br>Add one above to get notified!</div></div>
+    </div>
+    </div>
+
+    <footer class="appFooter">
+      <p>&copy; 2026 MediScan Platform &mdash; Advanced Healthcare Solutions v1.2.0</p>
+    </footer>
+  </div>
+</div>
+
+<!-- ====== PROFILE ====== -->
+<div class="screen" id="profileScreen">
+  <nav class="topBar">
+    <div class="topBar-brand">
+      <div class="topBar-icon"><svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg></div>
+      <span class="topBar-title">MediScan</span>
+    </div>
+    <div class="topBar-nav">
+      <button class="navBtn" onclick="goTo('homeScreen')">&#127968; Home</button>
+      <button class="navBtn" onclick="goTo('scanScreen')">&#128269; Scan</button>
+      <button class="navBtn" onclick="goTo('reminderScreen')">&#9200; Reminders</button>
+      <button class="navBtn current" onclick="goTo('profileScreen')">&#128100; Profile</button>
+      <button class="logoutBtn" onclick="doLogout()">Logout</button>
+    </div>
+  </nav>
+  <div class="pageWrap">
+    <div class="scan-head">
+      <h2 class="syne">My Profile</h2>
+      <p>Fill in your health details here so the AI assistant can check for personalized allergy warnings.</p>
+    </div>
+    <div class="profileForm">
+      <h3>Personal Details</h3>
+      <div class="fRow">
+        <div class="fGroup"><label>Full Name</label><input type="text" class="fControl" id="pName" placeholder="Your name"></div>
+        <div class="fGroup"><label>Age</label><input type="text" class="fControl" id="pAge" placeholder="e.g. 25"></div>
+      </div>
+      <div class="fRow" style="margin-top:14px;">
+        <div class="fGroup">
+          <label>Blood Group</label>
+          <select class="selectBox" id="pBlood">
+            <option value="">Select</option>
+            <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+            <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+          </select>
+        </div>
+        <div class="fGroup"><label>Phone Number</label><input type="text" class="fControl" id="pPhone" placeholder="e.g. 9876543210"></div>
+      </div>
+      <div class="fRow" style="margin-top:14px;">
+        <div class="fGroup"><label>Doctor Name</label><input type="text" class="fControl" id="pDoctor" placeholder="Dr. ..."></div>
+        <div class="fGroup"><label>Known Allergies</label><input type="text" class="fControl" id="pAllergy" placeholder="e.g. Penicillin"></div>
+      </div>
+      <button class="goBtn" style="margin-top:20px;" onclick="saveProfile()">Save Profile</button>
+      <div class="profileSaved" id="profileMsg">Profile saved successfully!</div>
+    </div>
+
+    <!-- qr scan section -->
+    <div class="profileForm">
+      <h3>Scan a Prescription QR Code</h3>
+      <p style="font-size:14px;color:var(--txt2);margin-bottom:14px;">Upload a QR code image generated by this app to view its medicine and patient data.</p>
+      <div class="uploadBox" onclick="document.getElementById('qrFileInput').click()">
+        <div class="ico">&#128247;</div>
+        <p><strong>Click to upload a QR code image</strong><br>JPG, PNG, WebP supported</p>
+      </div>
+      <input type="file" id="qrFileInput" accept="image/*" onchange="scanQRFile(event)" style="display:none;">
+      <div id="qrScanResult"></div>
+    </div>
+
+    <footer class="appFooter">
+      <p>MediScan v1.2.0 &mdash; A student project for educational purposes</p>
+    </footer>
+  </div>
+</div>
+
+<script src="/static/script.js"></script>
+<!-- AI Chat FAB Button -->
+<div class="ai-chat-btn" id="aiChatBtn" onclick="toggleAIChat()">
+  <div class="ai-chat-btn-pulse"></div>
+  <span class="ai-fab-emoji">💊</span>
+  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+  </svg>
+</div>
+
+<div class="ai-chat-window" id="aiChatWindow">
+  <!-- Header with avatar -->
+  <div class="ai-chat-header">
+    <div class="ai-chat-header-left">
+      <div class="ai-avatar">
+        <span>🩺</span>
+        <div class="ai-avatar-status"></div>
+      </div>
+      <div class="ai-chat-header-info">
+        <div class="ai-chat-title">Dr. Medi</div>
+        <div class="ai-chat-subtitle">
+          <span class="ai-online-dot"></span>
+          AI Pharmacist &bull; Online
+        </div>
+      </div>
+    </div>
+    <button class="ai-close-btn" onclick="toggleAIChat()" title="Close chat">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+  </div>
+  
+  <!-- Messages area -->
+  <div class="ai-chat-messages" id="aiChatMessages">
+    <!-- Welcome card -->
+    <div class="ai-welcome-card">
+      <div class="ai-welcome-avatar">🩺</div>
+      <div class="ai-welcome-greeting">Namaste! 👋</div>
+      <div class="ai-welcome-text">
+        I'm <strong>Dr. Medi</strong>, your friendly AI pharmacist. Scan or search a medicine first, then ask me anything!
+      </div>
+      <div class="ai-quick-chips" id="aiQuickChips">
+        <button class="ai-chip" onclick="askQuickQuestion('What is the dosage?')">💊 Dosage</button>
+        <button class="ai-chip" onclick="askQuickQuestion('What are the side effects?')">⚠️ Side effects</button>
+        <button class="ai-chip" onclick="askQuickQuestion('Any safety warnings?')">🛡️ Warnings</button>
+        <button class="ai-chip" onclick="askQuickQuestion('Is this safe for children?')">👶 Safe for kids?</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Input area -->
+  <div class="ai-chat-input-area">
+    <!-- Language & status bar -->
+    <div class="ai-input-topbar">
+        <select id="aiLangSelect" class="ai-lang-select">
+            <option value="en-IN">Loading languages...</option>
+        </select>
+        <button id="stopAudioBtn" onclick="stopSpeaking()" class="ai-stop-audio-btn" style="display:none;">
+            🔇 Stop
+        </button>
+        <span id="voiceStatus" class="ai-voice-status" style="display:none;">
+          <span class="ai-voice-pulse"></span> Listening...
+        </span>
+    </div>
+    
+    <!-- Input row -->
+    <div class="ai-input-row">
+        <button id="micBtn" onclick="toggleListening()" class="ai-mic-btn" title="Tap to speak">
+            <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+            </svg>
+        </button>
+        
+        <input type="text" id="aiChatInput" class="ai-text-input" placeholder="Ask me about your medicine..." onkeypress="handleAIChatEnter(event)">
+        
+        <button class="ai-send-btn" onclick="triggerSend('text')" title="Send message">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" style="width:18px; height:18px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+        </button>
+    </div>
+  </div>
+</div>
+
+<!-- Global Google Translate Element — hidden on small screens via CSS to avoid overlapping bottom nav -->
+<div id="google_translate_element" style="position: fixed; bottom: 20px; left: 20px; z-index: 999; background: white; padding: 4px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);"></div>
+
+<script type="text/javascript">
+function googleTranslateElementInit() {
+  new google.translate.TranslateElement({
+    pageLanguage: 'en',
+    includedLanguages: 'en,hi,mr,gu,ta,te,kn,ml,bn',
+    layout: google.translate.TranslateElement.InlineLayout.SIMPLE
+  }, 'google_translate_element');
+}
+</script>
+<script type="text/javascript" src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+</body>
+</html>

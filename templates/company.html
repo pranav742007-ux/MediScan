@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5">
+<title>MediScan - Company Portal</title>
+<meta name="description" content="Company portal to upload medicine details and generate QR codes for MediScan.">
+<meta name="theme-color" content="#1E3A8A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231D4ED8'/%3E%3Ctext x='50' y='68' text-anchor='middle' font-size='50' fill='white'%3E🏢%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="manifest" href="/static/manifest.json">
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/static/sw.js');
+    });
+  }
+</script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<!-- Custom company styles -->
+<style>
+  :root {
+    --pri: #2563EB; /* Blue primary for company portal */
+    --hover: #1D4ED8;
+    --ring: rgba(37, 99, 235, 0.3);
+  }
+  .login-card {
+    border-top: 5px solid var(--pri);
+  }
+  .login-logo-box {
+    background: var(--pri);
+  }
+</style>
+</head>
+<body>
+
+<!-- toast notification -->
+<div class="toastMsg" id="toast"></div>
+
+<!-- ====== LOGIN / REGISTER ====== -->
+<div class="screen active" id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-box">
+        <svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="1.8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+        </svg>
+      </div>
+      <h2>Company Portal</h2>
+      <p>Manage your medi-data across the MediScan network</p>
+    </div>
+
+    <div class="login-tabs">
+      <button class="login-tab on" id="loginTabSign" onclick="switchLoginMode('signin')">Sign In</button>
+      <button class="login-tab" id="loginTabReg" onclick="switchLoginMode('register')">Register Company</button>
+    </div>
+
+    <div id="loginError" class="login-error"></div>
+    <div id="loginSuccess" class="login-success"></div>
+
+    <!-- sign in form -->
+    <div id="signinForm" class="login-form">
+      <div class="login-field">
+        <label>Company Email</label>
+        <input type="email" id="signEmail" placeholder="admin@company.com">
+      </div>
+      <div class="login-field">
+        <label>Password</label>
+        <input type="password" id="signPass" placeholder="Enter password">
+      </div>
+      <button class="loginBtn" onclick="doSignIn()">Sign In to Dashboard</button>
+    </div>
+
+    <!-- register form -->
+    <div id="registerForm" class="login-form" style="display:none;">
+      <div class="login-field">
+        <label>Company Name</label>
+        <input type="text" id="regName" placeholder="E.g. Pharma Corp">
+      </div>
+      <div class="login-field">
+        <label>Corporate Email</label>
+        <input type="email" id="regEmail" placeholder="admin@company.com">
+      </div>
+      <div class="login-field">
+        <label>Password</label>
+        <input type="password" id="regPass" placeholder="Create a password">
+      </div>
+      <div class="login-field">
+        <label>Confirm Password</label>
+        <input type="password" id="regConfirm" placeholder="Confirm password">
+      </div>
+      <button class="loginBtn" onclick="doRegister()">Register Company</button>
+    </div>
+
+    <!-- Google Login Integration -->
+    <div style="margin-top:20px; text-align:center;">
+        <div style="display:flex; align-items:center; margin-bottom:15px; color:var(--txt2); font-size:12px;">
+            <div style="flex:1; height:1px; background:var(--bdr);"></div>
+            <div style="padding:0 10px;">OR</div>
+            <div style="flex:1; height:1px; background:var(--bdr);"></div>
+        </div>
+        <button class="loginBtn" style="background:#fff; color:#374151; border:1px solid #d1d5db; display:flex; align-items:center; justify-content:center; gap:10px;" onclick="doGoogleLogin()">
+            <svg width="18" height="18" viewBox="0 0 18 18"><path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4"/><path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/><path d="M3.964 10.712c-.18-.54-.282-1.117-.282-1.712s.102-1.173.282-1.712V4.956H.957a8.993 8.993 0 000 8.088l3.007-2.332z" fill="#FBBC05"/><path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.582C13.463.891 11.426 0 9 0 5.483 0 2.457 2.048.957 4.956l3.007 2.332C4.672 5.164 6.656 3.58 9 3.58z" fill="#EA4335"/></svg>
+            Continue with Google
+        </button>
+    </div>
+
+    <div class="login-footer" id="loginFooter">
+      Registering a new company? <a onclick="switchLoginMode('register')">Register here</a>
+    </div>
+  </div>
+</div>
+
+<!-- ====== COMPANY DASHBOARD ====== -->
+<div class="screen" id="companyScreen">
+  <nav class="topBar">
+    <div class="topBar-brand">
+      <div class="topBar-icon"><svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg></div>
+      <span class="topBar-title">Company Portal</span>
+      <div id="google_translate_element" style="margin-left: 15px;"></div>
+    </div>
+    <div class="topBar-nav">
+      <span class="userBadge" id="userBadgeCompany"><span class="userDot" style="background:#FDE047"></span><span id="userNameCompany"></span></span>
+      <button class="navBtn current" id="navUpload" onclick="switchCompanyTab('upload')">&#128228; Upload Medicine</button>
+      <button class="navBtn" id="navProfile" onclick="switchCompanyTab('profile')">&#128100; Company Profile</button>
+      <button class="logoutBtn" onclick="doLogout()">Logout</button>
+    </div>
+  </nav>
+  <div class="pageWrap">
+    <div id="companyUploadSection">
+        <div class="heroBox" style="background:var(--card);color:var(--txt);border:1px solid var(--bdr);">
+          <h1 class="syne" style="font-size:24px;margin-bottom:8px;">Upload Medicine Data</h1>
+          <p style="color:var(--txt2);font-size:14px;">Fill in the medicine specifications below to add it to the MediScan network. Once added, you will receive a QR code to print on your blister packs.</p>
+        </div>
+
+        <div class="profileForm">
+          <div class="fRow">
+            <div class="fGroup"><label>Medicine Name</label><input type="text" class="fControl" id="cMedName" placeholder="e.g. Paracetamol"></div>
+            <div class="fGroup"><label>Strength</label><input type="text" class="fControl" id="cMedStrength" placeholder="e.g. 500mg"></div>
+          </div>
+          <div class="fRow" style="margin-top:14px;">
+            <div class="fGroup"><label>Brands (comma separated)</label><input type="text" class="fControl" id="cMedBrands" placeholder="e.g. Crocin, Dolo"></div>
+            <div class="fGroup"><label>Category</label><input type="text" class="fControl" id="cMedCategory" placeholder="e.g. Analgesic"></div>
+          </div>
+          <div class="fRow" style="margin-top:14px;">
+            <div class="fGroup"><label>Manufacturing Date</label><input type="date" class="fControl" id="cMedMfgDate"></div>
+            <div class="fGroup"><label>Expiry Date</label><input type="date" class="fControl" id="cMedExpDate"></div>
+          </div>
+            <div class="fGroup">
+              <label>Safety Profile</label>
+              <select class="selectBox" id="cMedSafety">
+                <option value="safe">Safe (Green)</option>
+                <option value="caution">Caution (Yellow)</option>
+                <option value="danger">High Risk (Red)</option>
+              </select>
+            </div>
+            <div class="fGroup"><label>Dosage Instructions</label><input type="text" class="fControl" id="cMedDosage" placeholder="e.g. 1 tab every 6 hours"></div>
+          </div>
+          
+          <div class="fGroup" style="margin-top:14px;"><label>Common Uses</label><textarea class="scanInput" id="cMedUses" placeholder="What is this used for?" style="min-height:60px;"></textarea></div>
+          <div class="fGroup" style="margin-top:14px;"><label>Side Effects</label><textarea class="scanInput" id="cMedSide" placeholder="E.g. Dizziness, nausea..." style="min-height:60px;"></textarea></div>
+          <div class="fGroup" style="margin-top:14px;"><label>Warnings / Contraindications</label><textarea class="scanInput" id="cMedWarnings" placeholder="Do not use if..." style="min-height:60px;"></textarea></div>
+          <div class="fGroup" style="margin-top:14px;"><label>Safe Disposal Instructions</label><textarea class="scanInput" id="cMedDisposal" placeholder="E.g. Do not flush. Mix with coffee grounds and throw in trash..." style="min-height:60px;"></textarea></div>
+
+          <button class="goBtn" style="margin-top:20px;" onclick="uploadCompanyMedicine()">Upload Medicine & Generate QR</button>
+          <div id="signingStatus" class="signing-status" style="display:none; margin-top:16px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--pri);">
+                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <span id="signingText" style="font-weight: 600;">Signing &amp; Registering Medicine...</span>
+          </div>
+        </div>
+
+        <div class="profileForm" id="companyQrArea" style="display:none;text-align:center;">
+            <h3 class="syne" style="color:var(--pri);">Medicine QR Code</h3>
+            <p style="font-size:13px;color:var(--txt2);margin-bottom:14px;">Please download and print this code on the back of every tablet pocket for this medicine.</p>
+            <div id="companyQrContainer"></div>
+        </div>
+    </div>
+
+    <div id="companyProfileSection" style="display:none;">
+        <div class="heroBox" style="background:var(--card);color:var(--txt);border:1px solid var(--bdr);">
+          <h1 class="syne" style="font-size:24px;margin-bottom:8px;">Corporate Profile</h1>
+          <p style="color:var(--txt2);font-size:14px;">Manage your company's registry details and public contact information.</p>
+        </div>
+
+        <div class="profileForm">
+          <div class="fRow">
+            <div class="fGroup"><label>Registered Company Name</label><input type="text" class="fControl" id="cpName" placeholder="e.g. Acme Pharma Ltd."></div>
+            <div class="fGroup"><label>Corporate ID (CIN / GSTIN)</label><input type="text" class="fControl" id="cpID" placeholder="e.g. L24230MH1949PLC007837"></div>
+          </div>
+          <div class="fRow" style="margin-top:14px;">
+            <div class="fGroup"><label>Public Contact Email</label><input type="email" class="fControl" id="cpEmail" placeholder="support@company.com"></div>
+            <div class="fGroup"><label>Customer Support Phone</label><input type="text" class="fControl" id="cpPhone" placeholder="+91 ..."></div>
+          </div>
+          <div class="fGroup" style="margin-top:14px;">
+            <label>Headquarters Address</label>
+            <textarea class="scanInput" id="cpAddress" placeholder="Full registered address..." style="min-height:80px;"></textarea>
+          </div>
+          <div class="fGroup" style="margin-top:14px;">
+            <label>Manufacturing License Number</label>
+            <input type="text" class="fControl" id="cpLicense" placeholder="Form 25/28 License No.">
+          </div>
+
+          <button class="goBtn" style="margin-top:20px;" onclick="saveCompanyProfile()">Save Corporate Details</button>
+          <div id="cpToast" style="display:none; margin-top:10px; color:green; font-weight:600; text-align:center;">Profile updated successfully!</div>
+        </div>
+    </div>
+    
+    <!-- DASHBOARD HISTORY SECTION -->
+    <div style="margin-top:40px;margin-bottom:20px;">
+        <h2 class="syne" style="color:var(--txt);font-size:20px;margin-bottom:10px;">Your Uploaded Medicines</h2>
+        <div style="background:#FEF3C7; border:1px solid #F59E0B; border-radius:8px; padding:10px 14px; font-size:13px; color:#92400E; margin-bottom:16px;">
+          ⚠️ <strong>Demo Mode:</strong> Company identity is not verified in this prototype. In production, GSTIN/CIN verification would be required.
+        </div>
+        <p style="color:var(--txt2);font-size:14px;margin-bottom:20px;">These are the medicines your company has cryptographically signed and registered on MediScan. You can regenerate their QR codes anytime.</p>
+        <div id="companyHistoryList" style="display:flex;flex-direction:column;gap:12px;">
+            <!-- Javascript will populate this with previously uploaded medicines -->
+        </div>
+    </div>
+
+    <footer class="appFooter">
+      <p>&copy; 2026 MediScan Platform &mdash; Advanced Healthcare Solutions v1.2.0</p>
+    </footer>
+  </div>
+</div>
+
+<script src="/static/company.js"></script>
+
+<script type="text/javascript">
+function googleTranslateElementInit() {
+  new google.translate.TranslateElement({
+    pageLanguage: 'en',
+    includedLanguages: 'en,hi,mr,gu,ta,te,kn,ml,bn',
+    layout: google.translate.TranslateElement.InlineLayout.SIMPLE
+  }, 'google_translate_element');
+}
+</script>
+<script type="text/javascript" src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+.env
+__pycache__/
+*.pyc
+instance/
+.venv/
+tests/__pycache__/
+
+# IDEs and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test and build artifacts
+.pytest_cache/
+.coverage
+build/
+dist/
+*.egg-info/
