@@ -131,7 +131,10 @@ app.config.update(
 )
 
 # Anti-counterfeit signing secret (HMAC-SHA256)
-SIGNING_SECRET = os.environ.get("SIGNING_SECRET", app.secret_key).encode()
+SIGNING_SECRET = os.environ.get("SIGNING_SECRET", app.secret_role).encode() if hasattr(app, 'secret_role') else os.environ.get("SIGNING_SECRET", app.secret_key).encode()
+
+# Company Invite Code for automated role assignment
+COMPANY_INVITE_CODE = os.environ.get("COMPANY_INVITE_CODE", "").strip()
 
 
 def sign_medicine(med_id, med_name, serial_no):
@@ -1025,9 +1028,13 @@ def api_demo_login():
 def api_google_login():
     body = request.get_json(silent=True)
     token = body.get("idToken")
-    
-    # Self-service Google login defaults to user. Companies must be invited.
-    requested_role = body.get("role", "user")
+    submitted_code = body.get("invite_code", "").strip()
+
+    # Determine role based on invite code
+    if COMPANY_INVITE_CODE and submitted_code == COMPANY_INVITE_CODE:
+        requested_role = "company"
+    else:
+        requested_role = "user"
 
     if not token:
         return jsonify({"error": "No token provided"}), 400
@@ -1063,6 +1070,11 @@ def api_google_login():
         else:
             user_id = user["id"]
             role = user["role"]
+            # If existing user provides valid company code, upgrade them
+            if requested_role == "company" and role != "company":
+                c.execute("UPDATE users SET role = 'company' WHERE id = ?", (user_id,))
+                conn.commit()
+                role = "company"
 
         session["user_id"] = user_id
         session["role"] = role
@@ -1447,9 +1459,14 @@ def api_register():
     email = body.get("email", "").strip().lower()
     password = body.get("password", "")
     
-    # Force self-registrations to 'user'. 
-    # Companies must be invited/created by admins.
-    role = "user"
+    # Check for Company Invite Code to grant higher privileges
+    COMPANY_INVITE_CODE = os.environ.get("COMPANY_INVITE_CODE", "").strip()
+    submitted_code = body.get("invite_code", "").strip()
+    
+    if COMPANY_INVITE_CODE and submitted_code == COMPANY_INVITE_CODE:
+        role = "company"
+    else:
+        role = "user"
 
     if not name or not email or not password:
         return jsonify({"error": "Please fill in all fields"}), 400
@@ -1510,9 +1527,17 @@ def api_login():
     user = c.fetchone()
 
     if user and check_password_hash(user["password"], password):
-        # Establish Server Session Cookie
+        role = user["role"]
+        # Upgrade to company if valid code provided
+        submitted_code = body.get("invite_code", "").strip()
+        if COMPANY_INVITE_CODE and submitted_code == COMPANY_INVITE_CODE and role != "company":
+            c2 = conn.cursor()
+            c2.execute("UPDATE users SET role = 'company' WHERE id = ?", (user["id"],))
+            conn.commit()
+            role = "company"
+
         session["user_id"] = user["id"]
-        session["role"] = user["role"]
+        session["role"] = role
 
         return jsonify(
             {

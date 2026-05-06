@@ -53,7 +53,11 @@ function doSignIn() {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: email, password: pass })
+    body: JSON.stringify({ 
+      email: email, 
+      password: pass,
+      invite_code: document.getElementById('signInvite').value.trim()
+    })
   })
   .then(function(r) { return r.json().then(function(d) { return { status: r.status, data: d }; }); })
   .then(function(res) {
@@ -77,6 +81,7 @@ function doRegister() {
   var email = document.getElementById('regEmail').value.trim();
   var pass = document.getElementById('regPass').value;
   var confirm = document.getElementById('regConfirm').value;
+  var invite = document.getElementById('regInvite').value.trim();
 
   if (!name || !email || !pass) { showLoginError('Please fill in all fields'); return; }
   if (pass !== confirm) { showLoginError('Passwords don\'t match'); return; }
@@ -86,7 +91,13 @@ function doRegister() {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: name, email: email, password: pass, role: 'company' })
+    body: JSON.stringify({ 
+      name: name, 
+      email: email, 
+      password: pass, 
+      role: 'company', 
+      invite_code: invite 
+    })
   })
   .then(function(r) { return r.json().then(function(d) { return { status: r.status, data: d }; }); })
   .then(function(res) {
@@ -150,7 +161,11 @@ function handleGoogleCredentialResponse(response) {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ idToken: response.credential, role: 'company' })
+    body: JSON.stringify({ 
+      idToken: response.credential,
+      invite_code: document.getElementById('googleInvite').value.trim(),
+      role: 'company' 
+    })
   })
   .then(function(r) { return r.json(); })
   .then(function(res) {
