@@ -23,11 +23,41 @@
   }
 </script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 </head>
 <body>
 
 <!-- toast notification -->
 <div class="toastMsg" id="toast"></div>
+
+<!-- Live Camera Scanner Modal -->
+<div id="cameraScanModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:#000; z-index:9999; flex-direction:column; align-items:center; justify-content:center;">
+  
+  <!-- Header -->
+  <div style="position:absolute; top:0; left:0; right:0; padding:16px; display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.6); z-index:10;">
+    <span style="color:#fff; font-size:16px; font-weight:600;">📷 Scan QR / Barcode</span>
+    <button onclick="stopCameraScanner()" style="background:#EF4444; color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:14px; cursor:pointer;">✕ Close</button>
+  </div>
+
+  <!-- Video Feed -->
+  <video id="cameraFeed" autoplay playsinline muted style="width:100%; height:100%; object-fit:cover;"></video>
+  
+  <!-- Scanning Overlay -->
+  <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:240px; height:240px; border:3px solid #0FF; border-radius:12px; box-shadow:0 0 0 9999px rgba(0,0,0,0.45);">
+    <div style="position:absolute; top:-2px; left:-2px; width:30px; height:30px; border-top:4px solid #0FF; border-left:4px solid #0FF; border-radius:4px 0 0 0;"></div>
+    <div style="position:absolute; top:-2px; right:-2px; width:30px; height:30px; border-top:4px solid #0FF; border-right:4px solid #0FF; border-radius:0 4px 0 0;"></div>
+    <div style="position:absolute; bottom:-2px; left:-2px; width:30px; height:30px; border-bottom:4px solid #0FF; border-left:4px solid #0FF; border-radius:0 0 0 4px;"></div>
+    <div style="position:absolute; bottom:-2px; right:-2px; width:30px; height:30px; border-bottom:4px solid #0FF; border-right:4px solid #0FF; border-radius:0 0 4px 0;"></div>
+  </div>
+
+  <!-- Status Text -->
+  <div style="position:absolute; bottom:80px; left:0; right:0; text-align:center;">
+    <div id="cameraScanStatus" style="color:#fff; font-size:14px; background:rgba(0,0,0,0.6); display:inline-block; padding:8px 20px; border-radius:20px;">Point at a QR code or barcode</div>
+  </div>
+
+  <!-- Hidden canvas for frame capture -->
+  <canvas id="cameraCanvas" style="display:none;"></canvas>
+</div>
 
 <!-- camera scanner overlay (google lens style) -->
 <div id="cameraOverlay">
@@ -265,11 +295,16 @@
         <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3"/></svg>
       </div>
       <div class="camLaunchText">
-        <div class="camLaunchTitle">&#128247; Open Camera Scanner</div>
-        <div class="camLaunchSub">Scan medicine labels or QR codes with your camera</div>
+        <div class="camLaunchTitle">&#128247; Take Photo & Scan</div>
+        <div class="camLaunchSub">Upload a photo of medicine labels for AI analysis</div>
       </div>
       <svg class="camLaunchArrow" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.6)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>
+
+    <!-- Live scanner launch button -->
+    <button onclick="startCameraScanner()" class="goBtn" style="display:flex; align-items:center; justify-content:center; gap:8px; margin:15px 0; background:var(--primary); color:white; font-weight:600;">
+      📷 Scan with Camera (Live)
+    </button>
 
     <div class="scanArea">
       <div class="tabRow">

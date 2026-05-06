@@ -1618,4 +1618,190 @@ if ('speechSynthesis' in window) {
     window.speechSynthesis.onvoiceschanged = () => {
         populateIndianLanguages();
     };
+}
+
+// ============================================
+// LIVE CAMERA SCANNER (jsQR-based real-time)
+// ============================================
+var _cameraStream = null;
+var _cameraScanLoop = null;
+var _lastScannedCode = null;
+var _scanCooldown = false;
+
+function startCameraScanner() {
+  var modal = document.getElementById('cameraScanModal');
+  var video = document.getElementById('cameraFeed');
+  
+  if (!modal || !video) return;
+  modal.style.display = 'flex';
+  setScannerStatus('Requesting camera access...');
+
+  navigator.mediaDevices.getUserMedia({ 
+    video: { 
+      facingMode: 'environment', // rear camera on mobile
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    } 
+  })
+  .then(function(stream) {
+    _cameraStream = stream;
+    video.srcObject = stream;
+    video.play();
+    video.onloadedmetadata = function() {
+      setScannerStatus('Point at a QR code or barcode');
+      _lastScannedCode = null;
+      _scanCooldown = false;
+      startScanLoop();
+    };
+  })
+  .catch(function(err) {
+    setScannerStatus('Camera access denied or unavailable');
+    console.error('Camera error:', err);
+    setTimeout(stopCameraScanner, 2000);
+  });
+}
+
+function stopCameraScanner() {
+  if (_cameraScanLoop) {
+    cancelAnimationFrame(_cameraScanLoop);
+    _cameraScanLoop = null;
+  }
+  if (_cameraStream) {
+    _cameraStream.getTracks().forEach(function(track) { track.stop(); });
+    _cameraStream = null;
+  }
+  var modal = document.getElementById('cameraScanModal');
+  var video = document.getElementById('cameraFeed');
+  if (modal) modal.style.display = 'none';
+  if (video) video.srcObject = null;
+  _lastScannedCode = null;
+  _scanCooldown = false;
+}
+
+function setScannerStatus(msg) {
+  var el = document.getElementById('cameraScanStatus');
+  if (el) el.textContent = msg;
+}
+
+function startScanLoop() {
+  var video = document.getElementById('cameraFeed');
+  var canvas = document.getElementById('cameraCanvas');
+  if (!video || !canvas) return;
+  var ctx = canvas.getContext('2d');
+
+  function tick() {
+    if (!_cameraStream) return; // stopped
+
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      var code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: 'dontInvert'
+      });
+
+      if (code && code.data && !_scanCooldown) {
+        var scannedData = code.data;
+        
+        // Ignore if same code scanned recently
+        if (scannedData === _lastScannedCode) {
+          _cameraScanLoop = requestAnimationFrame(tick);
+          return;
+        }
+
+        _lastScannedCode = scannedData;
+        _scanCooldown = true;
+        setScannerStatus('✅ QR detected! Looking up...');
+
+        processScannedData(scannedData, function(success) {
+          if (success) {
+            stopCameraScanner();
+          } else {
+            // Allow retry after 2 seconds
+            setTimeout(function() {
+              _scanCooldown = false;
+              _lastScannedCode = null;
+              setScannerStatus('Point at a QR code or barcode');
+            }, 2000);
+          }
+        });
+        return; // pause loop during lookup
+      }
+    }
+
+    _cameraScanLoop = requestAnimationFrame(tick);
+  }
+
+  _cameraScanLoop = requestAnimationFrame(tick);
+}
+
+function processScannedData(rawData, callback) {
+  // Case 1: MED- short code (from 1D barcode if typed/scanned as text)
+  if (rawData.startsWith('MED-')) {
+    fetch('/api/verify-direct', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payload: JSON.stringify({ short_code: rawData }) })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.medicine) {
+        showResult(data.medicine, rawData);
+        callback(true);
+      } else {
+        setScannerStatus('❌ Code not found in database');
+        callback(false);
+      }
+    })
+    .catch(function() { setScannerStatus('❌ Server error'); callback(false); });
+    return;
+  }
+
+  // Case 2: URL with ?q= payload (MediScan QR code)
+  var qParam = null;
+  try {
+    if (rawData.includes('?q=')) {
+      qParam = rawData.split('?q=')[1].split('&')[0];
+    }
+  } catch(e) {}
+
+  if (qParam) {
+    fetch('/api/verify-direct', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payload: qParam })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.found && data.data && data.data.medicine) {
+        showResult(data.data.medicine, rawData);
+        callback(true);
+      } else {
+        setScannerStatus('❌ QR not verified — may be counterfeit');
+        callback(false);
+      }
+    })
+    .catch(function() { setScannerStatus('❌ Server error'); callback(false); });
+    return;
+  }
+
+  // Case 3: Unknown — try as medicine name search
+  fetch('/api/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: rawData })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.found && data.medicine) {
+      showResult(data.medicine, rawData);
+      callback(true);
+    } else {
+      setScannerStatus('❌ Could not identify: ' + rawData.substring(0, 30));
+      callback(false);
+    }
+  })
+  .catch(function() { setScannerStatus('❌ Server error'); callback(false); });
 }
