@@ -1687,51 +1687,78 @@ function startScanLoop() {
   var video = document.getElementById('cameraFeed');
   var canvas = document.getElementById('cameraCanvas');
   if (!video || !canvas) return;
-  var ctx = canvas.getContext('2d');
+  var ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  // Initialize Native Hardware Scanner if available (Lightning fast)
+  var nativeScanner = null;
+  if ('BarcodeDetector' in window) {
+    nativeScanner = new BarcodeDetector({ formats: ['qr_code', 'code_128', 'ean_13'] });
+  }
 
   function tick() {
     if (!_cameraStream) return; // stopped
 
     if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      var code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: 'dontInvert'
-      });
-
-      if (code && code.data && !_scanCooldown) {
-        var scannedData = code.data;
-        
-        // Ignore if same code scanned recently
-        if (scannedData === _lastScannedCode) {
-          _cameraScanLoop = requestAnimationFrame(tick);
-          return;
-        }
-
-        _lastScannedCode = scannedData;
-        _scanCooldown = true;
-        setScannerStatus('✅ QR detected! Looking up...');
-
-        processScannedData(scannedData, function(success) {
-          if (success) {
-            stopCameraScanner();
+      // PATH A: Use Native Hardware Scanner (Android/Modern Chrome)
+      if (nativeScanner) {
+        nativeScanner.detect(video).then(barcodes => {
+          if (barcodes.length > 0 && !_scanCooldown) {
+            handleSuccessfulScan(barcodes[0].rawValue);
           } else {
-            // Allow retry after 2 seconds
-            setTimeout(function() {
-              _scanCooldown = false;
-              _lastScannedCode = null;
-              setScannerStatus('Point at a QR code or barcode');
-            }, 2000);
+            _cameraScanLoop = requestAnimationFrame(tick);
           }
+        }).catch(err => {
+          // If native fails, fallback to jsQR
+          runFallbackJsQR();
         });
-        return; // pause loop during lookup
+      } 
+      // PATH B: Use jsQR Fallback (iOS/Safari)
+      else {
+        runFallbackJsQR();
       }
+    } else {
+      _cameraScanLoop = requestAnimationFrame(tick);
+    }
+  }
+
+  function runFallbackJsQR() {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    var code = jsQR(imageData.data, imageData.width, imageData.height, {
+      inversionAttempts: 'dontInvert'
+    });
+
+    if (code && code.data && !_scanCooldown) {
+      handleSuccessfulScan(code.data);
+    } else {
+      _cameraScanLoop = requestAnimationFrame(tick);
+    }
+  }
+
+  function handleSuccessfulScan(scannedData) {
+    if (scannedData === _lastScannedCode) {
+      _cameraScanLoop = requestAnimationFrame(tick);
+      return;
     }
 
-    _cameraScanLoop = requestAnimationFrame(tick);
+    _lastScannedCode = scannedData;
+    _scanCooldown = true;
+    setScannerStatus('✅ Code detected! Looking up...');
+
+    processScannedData(scannedData, function(success) {
+      if (success) {
+        stopCameraScanner();
+      } else {
+        setTimeout(function() {
+          _scanCooldown = false;
+          _lastScannedCode = null;
+          setScannerStatus('Point at a QR code or barcode');
+        }, 2000);
+      }
+    });
   }
 
   _cameraScanLoop = requestAnimationFrame(tick);
