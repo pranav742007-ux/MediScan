@@ -561,9 +561,12 @@ MEDS = [
 # Merge extended medicines into MEDS
 MEDS = MEDS + EXTENDED_MEDS
 
-# Initialize database on startup within application context
+# Auto-init DB on startup (works with gunicorn)
 with app.app_context():
-    init_db()
+    try:
+        init_db()
+    except Exception as e:
+        print(f"[startup] init_db failed: {e}")
 
 
 def find_medicine(query_text):
