@@ -172,14 +172,10 @@ class CursorWrapper:
             needs_ret = is_insert and ("users" in q.lower() or "medicines" in q.lower())
             if needs_ret and "RETURNING" not in q:
                 q += " RETURNING id"
-            try:
-                self.cursor.execute(q, args)
-            except Exception as e:
-                err = str(e).lower()
-                if "already exists" in err or "duplicate column" in err:
-                    pass
-                else:
-                    raise e
+            
+            # Execute directly so the outer block can handle rollbacks properly
+            self.cursor.execute(q, args)
+            
             if needs_ret:
                 row = self.cursor.fetchone()
                 if row:
@@ -239,9 +235,8 @@ def init_db():
     conn = get_db_connection()
     try:
         c = conn.cursor()
-        # User Table
-        c.execute(
-            """
+        # 1. CREATE ALL TABLES
+        c.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -250,11 +245,8 @@ def init_db():
                 role TEXT DEFAULT 'user',
                 profile_data TEXT DEFAULT '{}'
             )
-        """
-        )
-        # Medicine Table
-        c.execute(
-            """
+        """)
+        c.execute("""
             CREATE TABLE IF NOT EXISTS medicines (
                 id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -272,11 +264,8 @@ def init_db():
                 keywords TEXT,
                 company_id INTEGER
             )
-        """
-        )
-        # Scan History Table for Single-Use Serialization (Anti-cloning)
-        c.execute(
-            """
+        """)
+        c.execute("""
             CREATE TABLE IF NOT EXISTS scan_history (
                 serial_no TEXT PRIMARY KEY,
                 short_code TEXT UNIQUE,
@@ -284,38 +273,32 @@ def init_db():
                 first_scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 scan_count INTEGER DEFAULT 1
             )
-        """
-        )
+        """)
+        conn.commit() # Save tables first!
 
-        # Safely try to alter an old table to add new columns if they don't exist
-        try:
-            c.execute("ALTER TABLE scan_history ADD COLUMN short_code TEXT UNIQUE")
-        except Exception:
-            pass
-        try:
-            c.execute("ALTER TABLE scan_history ADD COLUMN med_id INTEGER")
-        except Exception:
-            pass
+        # 2. SAFELY APPLY ALTER TABLES (MIGRATIONS)
+        alters = [
+            "ALTER TABLE scan_history ADD COLUMN short_code TEXT UNIQUE",
+            "ALTER TABLE scan_history ADD COLUMN med_id INTEGER",
+            "ALTER TABLE medicines ADD COLUMN disposal TEXT",
+            "ALTER TABLE medicines ADD COLUMN mfg_date TEXT",
+            "ALTER TABLE medicines ADD COLUMN exp_date TEXT"
+        ]
+        
+        for alt in alters:
+            try:
+                c.execute(alt)
+                conn.commit()
+            except Exception:
+                if conn.is_postgres:
+                    conn.conn.rollback() # Reset transaction if column already exists
 
-        try:
-            c.execute("ALTER TABLE medicines ADD COLUMN disposal TEXT")
-        except Exception:
-            pass
-        try:
-            c.execute("ALTER TABLE medicines ADD COLUMN mfg_date TEXT")
-        except Exception:
-            pass
-        try:
-            c.execute("ALTER TABLE medicines ADD COLUMN exp_date TEXT")
-        except Exception:
-            pass
-
-        # Check if medicines table is empty
+        # 3. SEED INITIAL DATA
         c.execute("SELECT COUNT(*) FROM medicines")
         count_row = c.fetchone()
         count_val = list(count_row.values())[0] if isinstance(count_row, dict) else count_row[0]
+        
         if count_val == 0:
-            # Seed it with the default static list MEDS
             for med in MEDS:
                 c.execute(
                     """
@@ -337,8 +320,8 @@ def init_db():
                         0,
                     ),
                 )
+            conn.commit()
 
-        conn.commit()
     except Exception as e:
         if conn.is_postgres:
             conn.conn.rollback()
