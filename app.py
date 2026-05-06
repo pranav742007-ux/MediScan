@@ -1027,7 +1027,7 @@ def api_google_login():
     token = body.get("idToken")
     
     # Self-service Google login defaults to user. Companies must be invited.
-    requested_role = "user"
+    requested_role = body.get("role", "user")
 
     if not token:
         return jsonify({"error": "No token provided"}), 400
