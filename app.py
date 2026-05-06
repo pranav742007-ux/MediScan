@@ -309,7 +309,9 @@ def init_db():
 
         # Check if medicines table is empty
         c.execute("SELECT COUNT(*) FROM medicines")
-        if c.fetchone()[0] == 0:
+        count_row = c.fetchone()
+        count_val = list(count_row.values())[0] if isinstance(count_row, dict) else count_row[0]
+        if count_val == 0:
             # Seed it with the default static list MEDS
             for med in MEDS:
                 c.execute(
@@ -1546,11 +1548,13 @@ def api_stats():
         conn = get_db()
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM medicines")
-        total_meds = c.fetchone()[0]
+        med_row = c.fetchone()
+        total_meds = list(med_row.values())[0] if isinstance(med_row, dict) else med_row[0]
 
         c.execute("SELECT SUM(scan_count) FROM scan_history")
-        sum_row = c.fetchone()[0]
-        total_scans = sum_row if sum_row else 0
+        sum_row = c.fetchone()
+        sum_val = list(sum_row.values())[0] if isinstance(sum_row, dict) else sum_row[0]
+        total_scans = sum_val if sum_val else 0
 
         return jsonify(
             {"success": True, "total_meds": total_meds, "total_scans": total_scans}
