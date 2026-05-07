@@ -1392,8 +1392,19 @@ def api_verify_direct():
 
         if med_row:
             med_dict = dict(med_row)
+            
+            # --- FIX: Postgres Lowercase Conversion ---
+            # Postgres auto-lowercases column names. We must map it back to camelCase 
+            # so your frontend JavaScript can actually read it.
+            if "sideeffects" in med_dict:
+                med_dict["sideEffects"] = med_dict.pop("sideeffects")
+            # ------------------------------------------
+
             try:
-                med_dict["brands"] = json.loads(med_dict.get("brands", "[]"))
+                # Handle brands parsing safely
+                brands_data = med_dict.get("brands", "[]")
+                if isinstance(brands_data, str):
+                    med_dict["brands"] = json.loads(brands_data)
             except (json.JSONDecodeError, TypeError):
                 med_dict["brands"] = []
 
