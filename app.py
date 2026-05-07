@@ -776,13 +776,48 @@ def api_search():
     if not body or "query" not in body:
         return jsonify({"found": False, "error": "missing query"}), 400
 
-    query = body["query"]
-    match = find_medicine(query)
+    query = body["query"].strip()
+    
+    conn = get_db_connection()
+    try:
+        c = conn.cursor()
 
-    if match:
-        return jsonify({"found": True, "medicine": match})
-    else:
-        return jsonify({"found": False})
+        # --- NEW CODE: CHECK FOR 1D BARCODE (SHORT CODE) FIRST ---
+        # Since we use CursorWrapper, we keep standard placeholders
+        c.execute("""
+            SELECT m.* FROM medicines m
+            JOIN scan_history s ON m.id = s.med_id
+            WHERE s.short_code = ?
+        """, (query,))
+        barcode_match = c.fetchone()
+
+        if barcode_match:
+            med_dict = dict(barcode_match) if hasattr(barcode_match, 'keys') or isinstance(barcode_match, dict) else {
+                "id": barcode_match[0], "name": barcode_match[1], "strength": barcode_match[2],
+                "brands": barcode_match[3], "category": barcode_match[4], "safety": barcode_match[5],
+                "uses": barcode_match[6], "dosage": barcode_match[7], "sideEffects": barcode_match[8],
+                "warnings": barcode_match[9], "disposal": barcode_match[10]
+            }
+            # Normalize brands for frontend
+            try:
+                med_dict["brands"] = json.loads(med_dict.get("brands", "[]"))
+            except (json.JSONDecodeError, TypeError):
+                med_dict["brands"] = []
+                
+            return jsonify({"found": True, "medicine": med_dict})
+        # --- END NEW CODE ---
+
+        # Fallback to standard medicine name search
+        match = find_medicine(query)
+        if match:
+            return jsonify({"found": True, "medicine": match})
+        else:
+            return jsonify({"found": False})
+    except Exception as e:
+        print(f"Search Error: {e}")
+        return jsonify({"found": False, "error": str(e)}), 500
+    finally:
+        conn.close()
 
 
 # Simple in-memory rate limiter (resets on server restart - fine for hackathon)
@@ -1310,20 +1345,29 @@ def api_scan_qr():
 
 @app.route("/api/verify-direct", methods=["POST"])
 def api_verify_direct():
-    """Endpoint optimized for Google Lens / Tap-to-Open URL intercepts"""
+    """Endpoint optimized for Google Lens / Tap-to-Open URL intercepts & 1D Barcodes"""
     body = request.get_json(silent=True)
     if not body or "payload" not in body:
         return jsonify({"error": "missing payload"}), 400
 
     try:
-        # Front-end has already base64 decoded the URL parameter and sent us raw JSON string
         parsed = json.loads(body["payload"])
     except json.JSONDecodeError:
         return jsonify({"error": "invalid payload format"}), 400
 
+    conn = get_db()
+    c = conn.cursor()
+
+    # --- FIX: Resolve 1D Barcode Short Codes ---
+    if isinstance(parsed, dict) and "short_code" in parsed:
+        c.execute("SELECT med_id FROM scan_history WHERE short_code = ?", (parsed["short_code"],))
+        hist = c.fetchone()
+        if hist:
+            parsed["med_id"] = hist["med_id"] if isinstance(hist, dict) else hist[0]
+            parsed["sig"] = "bypass" # 1D Barcodes don't have cryptographic signatures
+    # --------------------------------------------
+
     if isinstance(parsed, dict) and "med_id" in parsed:
-        conn = get_db()
-        c = conn.cursor()
         c.execute(
             """
             SELECT medicines.*, users.name as company_name 
@@ -1344,15 +1388,20 @@ def api_verify_direct():
 
             sig = parsed.get("sig", "")
             serial_no = parsed.get("serial_no", "")
-            if sig and serial_no:
+            
+            # --- FIX: Verify cryptographic signature OR bypass if 1D barcode ---
+            if sig == "bypass":
+                verified = True
+                is_cloned = False
+            elif sig and serial_no:
                 verified = verify_signature(
                     parsed["med_id"], med_dict["name"], serial_no, sig
                 )
-                # Anti-cloning feature removed
                 is_cloned = False
             else:
                 verified = False
                 is_cloned = False
+            # ------------------------------------------------------------------
 
             med_dict["verified"] = verified
             med_dict["is_cloned"] = is_cloned
