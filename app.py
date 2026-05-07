@@ -1350,22 +1350,33 @@ def api_verify_direct():
     if not body or "payload" not in body:
         return jsonify({"error": "missing payload"}), 400
 
+    payload_data = body["payload"]
+
+    # --- FIX: Intelligently unlock Base64 (Google Lens) OR parse raw JSON (1D Barcodes) ---
     try:
-        parsed = json.loads(body["payload"])
-    except json.JSONDecodeError:
-        return jsonify({"error": "invalid payload format"}), 400
+        # Try to decode as Base64 first (This fixes the Google Lens deep link issue)
+        # We add padding if necessary to make it valid Base64
+        padded_payload = payload_data + '=' * (-len(payload_data) % 4)
+        decoded_str = base64.urlsafe_b64decode(padded_payload).decode('utf-8')
+        parsed = json.loads(decoded_str)
+    except Exception:
+        # If Base64 decoding fails, assume it's already raw JSON (from a 1D barcode search)
+        try:
+            parsed = json.loads(payload_data)
+        except json.JSONDecodeError:
+            return jsonify({"error": "invalid payload format"}), 400
+    # -------------------------------------------------------------------------------------
 
     conn = get_db()
     c = conn.cursor()
 
-    # --- FIX: Resolve 1D Barcode Short Codes ---
+    # --- Resolve 1D Barcode Short Codes ---
     if isinstance(parsed, dict) and "short_code" in parsed:
         c.execute("SELECT med_id FROM scan_history WHERE short_code = ?", (parsed["short_code"],))
         hist = c.fetchone()
         if hist:
             parsed["med_id"] = hist["med_id"] if isinstance(hist, dict) else hist[0]
             parsed["sig"] = "bypass" # 1D Barcodes don't have cryptographic signatures
-    # --------------------------------------------
 
     if isinstance(parsed, dict) and "med_id" in parsed:
         c.execute(
@@ -1389,7 +1400,7 @@ def api_verify_direct():
             sig = parsed.get("sig", "")
             serial_no = parsed.get("serial_no", "")
             
-            # --- FIX: Verify cryptographic signature OR bypass if 1D barcode ---
+            # Verify cryptographic signature OR bypass if 1D barcode
             if sig == "bypass":
                 verified = True
                 is_cloned = False
@@ -1401,7 +1412,6 @@ def api_verify_direct():
             else:
                 verified = False
                 is_cloned = False
-            # ------------------------------------------------------------------
 
             med_dict["verified"] = verified
             med_dict["is_cloned"] = is_cloned
@@ -1409,7 +1419,7 @@ def api_verify_direct():
             parsed["verified"] = verified
             parsed["is_cloned"] = is_cloned
 
-            return jsonify({"found": True, "data": parsed, "raw": body["payload"]})
+            return jsonify({"found": True, "data": parsed, "raw": payload_data})
 
     return jsonify({"found": False})
 
