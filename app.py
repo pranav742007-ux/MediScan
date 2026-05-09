@@ -123,15 +123,19 @@ if not app.secret_key:
         "CRITICAL: FLASK_SECRET_KEY environment variable is not set. Halting."
     )
 
+# Determine if running in production
+IS_PRODUCTION = os.environ.get("FLASK_ENV", "development").lower() == "production"
+
 # Configure session cookies securely
 app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
-    SESSION_COOKIE_SECURE=os.environ.get("FLASK_ENV", "development") == "production",
+    SESSION_COOKIE_SECURE=IS_PRODUCTION,
     SESSION_COOKIE_HTTPONLY=True,
+    PERMANENT_SESSION_LIFETIME=86400,  # 24 hours
 )
 
 # Anti-counterfeit signing secret (HMAC-SHA256)
-SIGNING_SECRET = os.environ.get("SIGNING_SECRET", app.secret_role).encode() if hasattr(app, 'secret_role') else os.environ.get("SIGNING_SECRET", app.secret_key).encode()
+SIGNING_SECRET = os.environ.get("SIGNING_SECRET", app.secret_key).encode()
 
 # Company Invite Code for automated role assignment
 COMPANY_INVITE_CODE = os.environ.get("COMPANY_INVITE_CODE", "").strip()
@@ -231,14 +235,19 @@ def close_db(error):
 
 
 def init_db():
-    """Initializes the database schema with production-grade safety."""
+    """Initializes the database schema with production-grade safety.
+    
+    Uses INTEGER PRIMARY KEY AUTOINCREMENT syntax which CursorWrapper
+    auto-translates to SERIAL PRIMARY KEY for PostgreSQL.
+    """
     conn = get_db_connection()
     try:
         c = conn.cursor()
         # 1. CREATE ALL TABLES
+        # Use SQLite syntax — CursorWrapper translates to Postgres automatically
         c.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL,
@@ -248,7 +257,7 @@ def init_db():
         """)
         c.execute("""
             CREATE TABLE IF NOT EXISTS medicines (
-                id SERIAL PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 strength TEXT,
                 brands TEXT,
@@ -274,7 +283,7 @@ def init_db():
                 scan_count INTEGER DEFAULT 1
             )
         """)
-        conn.commit() # Save tables first!
+        conn.commit()  # Save tables first!
 
         # 2. SAFELY APPLY ALTER TABLES (MIGRATIONS)
         alters = [
@@ -290,8 +299,9 @@ def init_db():
                 c.execute(alt)
                 conn.commit()
             except Exception:
+                # Column already exists — safe to ignore
                 if conn.is_postgres:
-                    conn.conn.rollback() # Reset transaction if column already exists
+                    conn.conn.rollback()
 
         # 3. SEED INITIAL DATA
         c.execute("SELECT COUNT(*) FROM medicines")
@@ -299,6 +309,7 @@ def init_db():
         count_val = list(count_row.values())[0] if isinstance(count_row, dict) else count_row[0]
         
         if count_val == 0:
+            print(f"[init_db] Seeding {len(MEDS)} medicines into database...")
             for med in MEDS:
                 c.execute(
                     """
@@ -321,11 +332,16 @@ def init_db():
                     ),
                 )
             conn.commit()
+            print(f"[init_db] ✅ Seeded {len(MEDS)} medicines successfully.")
+        else:
+            print(f"[init_db] Database already has {count_val} medicines. Skipping seed.")
 
     except Exception as e:
         if conn.is_postgres:
             conn.conn.rollback()
-        print(f"Database init warning/error: {e}")
+        print(f"[init_db] ❌ Database init error: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         conn.close()
 
@@ -749,15 +765,22 @@ def add_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self' 'unsafe-inline' data: blob: "
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: "
         "https://fonts.googleapis.com https://fonts.gstatic.com "
         "https://accounts.google.com https://*.gstatic.com "
-        "translate.google.com translate.googleapis.com *.translate.googleapis.com;"
+        "https://cdn.jsdelivr.net "
+        "https://translate.google.com https://translate.googleapis.com https://*.translate.googleapis.com;"
     )
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(self), microphone=(self), geolocation=()"
     response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
     return response
+
+
+@app.route("/health")
+def health_check():
+    """Lightweight health check endpoint for Render/load balancers."""
+    return jsonify({"status": "healthy", "service": "mediscan"}), 200
 
 
 @app.route("/")
@@ -1020,7 +1043,7 @@ def api_upload_medicine():
 @app.route("/api/demo-login", methods=["POST"])
 def api_demo_login():
     """Bypasses OAuth for rapid hackathon judge demonstrations."""
-    if os.environ.get("FLASK_ENV") == "production":
+    if IS_PRODUCTION:
         return jsonify({"error": "Demo login disabled in production"}), 403
     body = request.get_json(silent=True) or {}
     role = body.get("role", "user")
@@ -1645,9 +1668,10 @@ def api_stats():
 
 
 if __name__ == "__main__":
-    debug_mode = os.environ.get("FLASK_DEBUG", "true").lower() == "true"
+    debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() == "true" and not IS_PRODUCTION
     print()
     print("  MediScan server starting...")
+    print(f"  Environment: {'PRODUCTION' if IS_PRODUCTION else 'development'}")
     print(f"  Debug mode: {debug_mode}")
     print("  Open http://localhost:5000 in your browser")
     print()

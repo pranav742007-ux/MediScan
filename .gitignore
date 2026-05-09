@@ -1,19 +1,38 @@
+# Environment & Secrets
 .env
+.env.local
+.env.production
+
+# Python
 __pycache__/
 *.pyc
-instance/
+*.pyo
+*.pyd
 .venv/
-tests/__pycache__/
+venv/
+env/
+*.egg-info/
+dist/
+build/
 
-# IDEs and OS files
+# Database (local SQLite)
+instance/
+
+# IDE & OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+*.swp
+*.swo
+*~
 
-# Test and build artifacts
+# Test artifacts
+tests/__pycache__/
 .pytest_cache/
 .coverage
-build/
-dist/
-*.egg-info/
+htmlcov/
+
+# Stray files
+git
+list_models.py

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mediscan-v3';
+const CACHE_NAME = 'mediscan-v4';
 const STATIC_ASSETS = [
   '/',
   '/static/styles.css',

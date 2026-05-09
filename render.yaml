@@ -1,0 +1,26 @@
+# Render Blueprint — One-click deploy configuration
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: mediscan
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    repo: https://github.com/pranav742007-ux/MediScan  # Update with your repo URL
+    branch: main
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: SIGNING_SECRET
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false  # Must be set manually in Render dashboard
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: COMPANY_INVITE_CODE
+        value: MEDISCAN2026
