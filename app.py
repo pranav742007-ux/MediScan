@@ -48,6 +48,7 @@ try:
     HAS_QR_GEN = True
 except Exception as e:
     HAS_QR_GEN = False
+    Image = None
     print(f"[warning] QR generation unavailable: {e}")
     print('  install with: pip install "qrcode[pil]" Pillow')
 
@@ -728,10 +729,8 @@ def decode_qr_bytes(raw_bytes):
         return None
 
     # Strict Pyzbar decoding (Optical only)
-    if pyzbar_decode is not None:
+    if pyzbar_decode is not None and Image is not None:
         try:
-            from PIL import Image
-
             img_pil = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
             decoded = pyzbar_decode(img_pil)
             if decoded:
@@ -765,11 +764,13 @@ def add_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: "
-        "https://fonts.googleapis.com https://fonts.gstatic.com "
-        "https://accounts.google.com https://*.gstatic.com "
-        "https://cdn.jsdelivr.net "
-        "https://translate.google.com https://translate.googleapis.com https://*.translate.googleapis.com;"
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://accounts.google.com https://*.gstatic.com https://cdn.jsdelivr.net https://translate.google.com https://translate.googleapis.com; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://translate.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: blob: https://*.translate.googleapis.com https://translate.google.com; "
+        "connect-src 'self' https://accounts.google.com https://translate.googleapis.com https://*.translate.googleapis.com; "
+        "frame-src https://accounts.google.com;"
     )
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(self), microphone=(self), geolocation=()"
@@ -801,12 +802,11 @@ def api_search():
 
     query = body["query"].strip()
     
-    conn = get_db_connection()
+    conn = get_db()
     try:
         c = conn.cursor()
 
-        # --- NEW CODE: CHECK FOR 1D BARCODE (SHORT CODE) FIRST ---
-        # Since we use CursorWrapper, we keep standard placeholders
+        # Check for 1D barcode short code first (e.g. MED-A1B2C3)
         c.execute("""
             SELECT m.* FROM medicines m
             JOIN scan_history s ON m.id = s.med_id
@@ -821,14 +821,12 @@ def api_search():
                 "uses": barcode_match[6], "dosage": barcode_match[7], "sideEffects": barcode_match[8],
                 "warnings": barcode_match[9], "disposal": barcode_match[10]
             }
-            # Normalize brands for frontend
             try:
                 med_dict["brands"] = json.loads(med_dict.get("brands", "[]"))
             except (json.JSONDecodeError, TypeError):
                 med_dict["brands"] = []
                 
             return jsonify({"found": True, "medicine": med_dict})
-        # --- END NEW CODE ---
 
         # Fallback to standard medicine name search
         match = find_medicine(query)
@@ -839,38 +837,41 @@ def api_search():
     except Exception as e:
         print(f"Search Error: {e}")
         return jsonify({"found": False, "error": str(e)}), 500
-    finally:
-        conn.close()
 
 
-# Simple in-memory rate limiter (resets on server restart - fine for hackathon)
-_chat_calls = {}
+# Simple in-memory rate limiter (resets on server restart — fine for hackathon)
+_rate_limits = {}  # key: "endpoint:ip", value: list of timestamps
+
+
+def _check_rate_limit(endpoint, ip, max_calls, window_seconds):
+    """Returns True if the request should be blocked."""
+    now = time.time()
+    key = f"{endpoint}:{ip}"
+    calls = _rate_limits.get(key, [])
+    calls = [t for t in calls if now - t < window_seconds]
+    if len(calls) >= max_calls:
+        return True
+    calls.append(now)
+    _rate_limits[key] = calls
+
+    # Periodic cleanup to cap memory
+    if len(_rate_limits) > 500:
+        stale = [k for k, v in _rate_limits.items() if all(now - t > window_seconds * 2 for t in v)]
+        for k in stale:
+            del _rate_limits[k]
+    return False
 
 
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
     ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
-    now = time.time()
-    calls = _chat_calls.get(ip, [])
-    # Allow max 10 calls per minute per IP
-    calls = [t for t in calls if now - t < 60]
-    if len(calls) >= 10:
+    if _check_rate_limit("chat", ip, max_calls=10, window_seconds=60):
         return jsonify({"error": "Too many requests. Please wait a moment."}), 429
-    calls.append(now)
-    _chat_calls[ip] = calls
-
-    # Periodic cleanup: purge stale IPs every 100 calls to prevent memory leak
-    if len(_chat_calls) > 200:
-        stale_ips = [k for k, v in _chat_calls.items() if all(now - t > 120 for t in v)]
-        for k in stale_ips:
-            del _chat_calls[k]
     body = request.get_json(silent=True)
     if not body:
         return jsonify({"error": "no data"}), 400
 
     api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        api_key = os.environ.get("GENAI_API_KEY")
 
     if not api_key:
         return jsonify({"error": "Missing Server API key."}), 500
@@ -1346,9 +1347,18 @@ def api_scan_qr():
                         verified = verify_signature(
                             parsed["med_id"], med_dict["name"], serial_no, sig
                         )
-
-                        # Anti-cloning feature removed
                         is_cloned = False
+
+                        # Increment scan_count for verified QR codes
+                        if verified:
+                            try:
+                                c.execute(
+                                    "UPDATE scan_history SET scan_count = scan_count + 1 WHERE serial_no = ?",
+                                    (serial_no,),
+                                )
+                                conn.commit()
+                            except Exception:
+                                pass
                     else:
                         verified = False
                         is_cloned = False
@@ -1438,11 +1448,32 @@ def api_verify_direct():
             if sig == "bypass":
                 verified = True
                 is_cloned = False
+                # Increment scan count for barcode scans
+                short_code = parsed.get("short_code", "")
+                if short_code:
+                    try:
+                        c.execute(
+                            "UPDATE scan_history SET scan_count = scan_count + 1 WHERE short_code = ?",
+                            (short_code,),
+                        )
+                        conn.commit()
+                    except Exception:
+                        pass
             elif sig and serial_no:
                 verified = verify_signature(
                     parsed["med_id"], med_dict["name"], serial_no, sig
                 )
                 is_cloned = False
+                # Increment scan count for QR scans
+                if verified:
+                    try:
+                        c.execute(
+                            "UPDATE scan_history SET scan_count = scan_count + 1 WHERE serial_no = ?",
+                            (serial_no,),
+                        )
+                        conn.commit()
+                    except Exception:
+                        pass
             else:
                 verified = False
                 is_cloned = False
@@ -1527,6 +1558,10 @@ def api_save_profile():
 
 @app.route("/api/register", methods=["POST"])
 def api_register():
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
+    if _check_rate_limit("register", ip, max_calls=5, window_seconds=300):
+        return jsonify({"error": "Too many registration attempts. Try again in 5 minutes."}), 429
+
     body = request.get_json(silent=True)
     if not body:
         return jsonify({"error": "no data"}), 400
@@ -1536,7 +1571,6 @@ def api_register():
     password = body.get("password", "")
     
     # Check for Company Invite Code to grant higher privileges
-    COMPANY_INVITE_CODE = os.environ.get("COMPANY_INVITE_CODE", "").strip()
     submitted_code = body.get("invite_code", "").strip()
     
     if COMPANY_INVITE_CODE and submitted_code == COMPANY_INVITE_CODE:
@@ -1584,6 +1618,10 @@ def api_register():
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
+    if _check_rate_limit("login", ip, max_calls=10, window_seconds=300):
+        return jsonify({"error": "Too many login attempts. Try again in 5 minutes."}), 429
+
     body = request.get_json(silent=True)
     if not body:
         return jsonify({"error": "no data"}), 400
@@ -1622,7 +1660,7 @@ def api_login():
                     "id": user["id"],
                     "name": user["name"],
                     "email": user["email"],
-                    "role": user["role"],
+                    "role": role,
                 },
             }
         )
@@ -1665,6 +1703,11 @@ def api_stats():
         )
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# Initialize database tables and seed data on first startup
+with app.app_context():
+    init_db()
 
 
 if __name__ == "__main__":
