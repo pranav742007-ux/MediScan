@@ -200,7 +200,7 @@
     <div class="splash-sub">Medicine Info & Safety Checker</div>
     <div class="splash-loader">
       <div class="splash-track"><div class="splash-fill"></div></div>
-      <div class="splash-hint">Loading medicine database...</div>
+      <div class="splash-hint">Connecting to server (may take ~30s on first visit)...</div>
     </div>
   </div>
 </div>
@@ -230,7 +230,7 @@
   </nav>
   <div class="pageWrap">
     <div class="heroBox">
-      <div class="hero-tag">&#128138; MediScan v1.2.0</div>
+      <div class="hero-tag">&#128138; MediScan</div>
       <h1 class="hero-heading syne">Look up medicine details &amp; safety info</h1>
       <div class="hero-desc">Enter a medicine name or brand to see dosage, side effects, warnings and more. You can also set pill reminders.</div>
       <button class="scanStartBtn" onclick="goTo('scanScreen')">
@@ -240,8 +240,8 @@
     </div>
 
     <div class="statsRow">
-      <div class="stat-box"><div class="stat-num" id="statNetworkMeds">-</div><div class="stat-lbl">Global Medicines</div></div>
-      <div class="stat-box"><div class="stat-num" id="statNetworkScans">-</div><div class="stat-lbl">Network Verifications</div></div>
+      <div class="stat-box"><div class="stat-num" id="statNetworkMeds">-</div><div class="stat-lbl">Medicines in DB</div></div>
+      <div class="stat-box"><div class="stat-num" id="statNetworkScans">-</div><div class="stat-lbl">QR Codes Verified</div></div>
       <div class="stat-box"><div class="stat-num" id="statReminders">0</div><div class="stat-lbl">My Reminders</div></div>
     </div>
 
@@ -262,8 +262,8 @@
     </div>
 
     <footer class="appFooter">
-      <p>MediScan v1.2.0 &mdash; Securing global medicine supply chains</p>
-      <p>Built with &#10084;&#65039; for public health security</p>
+      <p>MediScan &mdash; A student engineering project for medicine safety awareness</p>
+      <p>Built with &#10084;&#65039; as a proof-of-concept prototype</p>
     </footer>
   </div>
 </div>
@@ -399,11 +399,11 @@
 
     <div class="disclaimer">
       <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-      <p><strong>Note:</strong> This project uses a local database of 100+ common medicines. Results may not cover all drugs. Always verify with a pharmacist or doctor.</p>
+      <p><strong>How it works:</strong> Search matches against a curated database of 100+ common medicines (name, brand, and regional keywords). If found, you'll see structured dosage, side effects, and warnings. For follow-up questions, the AI assistant (Dr. Medi) uses Google Gemini to answer in your language. Always verify with a pharmacist or doctor.</p>
     </div>
 
     <footer class="appFooter">
-      <p>MediScan v1.2.0 &mdash; A student project for educational purposes</p>
+      <p>MediScan &mdash; Medicine lookup from a curated database of 100+ drugs</p>
     </footer>
   </div>
 </div>
@@ -488,7 +488,7 @@
     </div>
 
     <footer class="appFooter">
-      <p>&copy; 2026 MediScan Platform &mdash; Advanced Healthcare Solutions v1.2.0</p>
+      <p>&copy; 2026 MediScan &mdash; Student engineering prototype</p>
     </footer>
   </div>
 </div>
@@ -551,7 +551,7 @@
     </div>
 
     <footer class="appFooter">
-      <p>MediScan v1.2.0 &mdash; A student project for educational purposes</p>
+      <p>MediScan &mdash; Student engineering prototype</p>
     </footer>
   </div>
 </div>
