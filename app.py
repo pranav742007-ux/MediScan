@@ -16,8 +16,14 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 # Load variables from .env cleanly and securely
 load_dotenv()
 
-from google import genai as genai_sdk
-from google.genai import types
+try:
+    from google import genai as genai_sdk
+    from google.genai import types
+    HAS_GENAI = True
+except ImportError:
+    HAS_GENAI = False
+    genai_sdk = None
+    types = None
 import json
 import base64
 import io
@@ -979,6 +985,9 @@ def api_chat():
     prompt = prompt[:500]
 
     try:
+        if not HAS_GENAI:
+            raise RuntimeError("google-genai library is missing.")
+
         # Use the new synchronous client, no transport config needed
         client = genai_sdk.Client(api_key=api_key)
 
