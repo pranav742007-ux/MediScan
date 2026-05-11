@@ -937,8 +937,6 @@ def api_chat():
         return jsonify({"error": "no data"}), 400
 
     api_key = os.environ.get("GEMINI_API_KEY")
-    # TEMP DEBUG: show exactly what key (if any) was loaded at runtime
-    print(f"DEBUG - The API Key loaded is: {api_key}")
 
     if not api_key:
         print("[warning] GEMINI_API_KEY not set; using local fallback")
@@ -995,7 +993,7 @@ def api_chat():
 
         # Use the latest Gemini 2.5 Pro for superior medical reasoning
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.5-pro",
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=sys_prompt,
