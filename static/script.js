@@ -1362,19 +1362,24 @@ function sendAIMessage() {
             readAloud(data.reply);
             isVoiceModeActive = false; // CRITICAL: Reset flag
         }
-      } else if (data.error) {
-        let msg = "Error: " + data.error;
-        addChatMessage(msg, 'ai-msg');
-        if (isVoiceModeActive) {
-            readAloud(msg);
-            isVoiceModeActive = false;
+      } else if (data.error || !data.reply) {
+        let msg;
+        // Any API/key failure → show local medicine data instead
+        if (currentScannedMedicine) {
+          const m = currentScannedMedicine;
+          msg = `🔄 *Shifting to local server as AI is busy.*\n\n` +
+                `**${m.name || 'Medicine'} — Local Info:**\n\n` +
+                `• **Uses:** ${m.uses || 'Not specified.'}\n` +
+                `• **Dosage:** ${m.dosage || 'Not specified.'}\n` +
+                `• **Warnings:** ${m.warnings || 'Not specified.'}\n` +
+                `• **Disposal:** ${m.disposal || 'Not specified.'}`;
+        } else {
+          msg = "🔄 *Shifting to local server as AI is busy. Please scan a medicine first to see its info.*";
         }
-      } else {
-        let msg = "Sorry, I encountered an error. Please try again.";
         addChatMessage(msg, 'ai-msg');
         if (isVoiceModeActive) {
-            readAloud(msg);
-            isVoiceModeActive = false;
+          readAloud(msg);
+          isVoiceModeActive = false;
         }
       }
     })
@@ -1831,4 +1836,4 @@ function processScannedData(rawData, callback) {
     }
   })
   .catch(function() { setScannerStatus('❌ Server error'); callback(false); });
-}
+}

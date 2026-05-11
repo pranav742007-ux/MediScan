@@ -6,7 +6,7 @@ make sure to install: pip install flask qrcode[pil] Pillow opencv-python-headles
 """
 
 import os
-from dotenv import load_dotenv  
+from dotenv import load_dotenv
 import warnings
 
 # Suppress annoying library warnings for a cleaner demo terminal
@@ -33,12 +33,19 @@ from datetime import date
 
 from medicines_data import EXTENDED_MEDS, DRUG_INTERACTIONS
 
-from flask import Flask, request, jsonify, send_from_directory, session, g, render_template
+from flask import (
+    Flask,
+    request,
+    jsonify,
+    send_from_directory,
+    session,
+    g,
+    render_template,
+)
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
-
 
 # QR generation dependencies (optional)
 try:
@@ -111,6 +118,7 @@ if TYPE_CHECKING:
 app = Flask(__name__, static_folder="static")
 
 from werkzeug.middleware.proxy_fix import ProxyFix
+
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
 
 
@@ -177,48 +185,66 @@ class CursorWrapper:
             needs_ret = is_insert and ("users" in q.lower() or "medicines" in q.lower())
             if needs_ret and "RETURNING" not in q:
                 q += " RETURNING id"
-            
+
             # Execute directly so the outer block can handle rollbacks properly
             self.cursor.execute(q, args)
-            
+
             if needs_ret:
                 row = self.cursor.fetchone()
                 if row:
                     # Capture the ID from the RETURNING clause safely
-                    self.lastrowid = row['id'] if isinstance(row, dict) else row[0]
+                    self.lastrowid = row["id"] if isinstance(row, dict) else row[0]
         else:
             self.cursor.execute(query, args)
             self.lastrowid = getattr(self.cursor, "lastrowid", None)
         return self
 
-    def fetchone(self): return self.cursor.fetchone()
-    def fetchall(self): return self.cursor.fetchall()
-    def __iter__(self): return iter(self.cursor)
+    def fetchone(self):
+        return self.cursor.fetchone()
+
+    def fetchall(self):
+        return self.cursor.fetchall()
+
+    def __iter__(self):
+        return iter(self.cursor)
+
 
 class DBWrapper:
     def __init__(self, conn, is_postgres):
         self.conn = conn
         self.is_postgres = is_postgres
+
     def cursor(self):
         return CursorWrapper(self.conn.cursor(), self.is_postgres)
-    def commit(self): self.conn.commit()
-    def close(self): self.conn.close()
+
+    def commit(self):
+        self.conn.commit()
+
+    def close(self):
+        self.conn.close()
+
     @property
-    def row_factory(self): pass
+    def row_factory(self):
+        pass
+
     @row_factory.setter
-    def row_factory(self, val): pass
+    def row_factory(self, val):
+        pass
+
 
 def get_db_connection():
     db_url = os.environ.get("DATABASE_URL")
     if db_url and db_url.startswith("postgres"):
         import psycopg2
         from psycopg2.extras import RealDictCursor
+
         conn = psycopg2.connect(db_url, cursor_factory=RealDictCursor)
         return DBWrapper(conn, True)
     else:
         conn = sqlite3.connect(DB_FILE)
         conn.row_factory = sqlite3.Row
         return DBWrapper(conn, False)
+
 
 def get_db():
     """Provides a single database connection per request lifecycle."""
@@ -237,7 +263,7 @@ def close_db(error):
 
 def init_db():
     """Initializes the database schema with production-grade safety.
-    
+
     Uses INTEGER PRIMARY KEY AUTOINCREMENT syntax which CursorWrapper
     auto-translates to SERIAL PRIMARY KEY for PostgreSQL.
     """
@@ -292,9 +318,9 @@ def init_db():
             "ALTER TABLE scan_history ADD COLUMN med_id INTEGER",
             "ALTER TABLE medicines ADD COLUMN disposal TEXT",
             "ALTER TABLE medicines ADD COLUMN mfg_date TEXT",
-            "ALTER TABLE medicines ADD COLUMN exp_date TEXT"
+            "ALTER TABLE medicines ADD COLUMN exp_date TEXT",
         ]
-        
+
         for alt in alters:
             try:
                 c.execute(alt)
@@ -307,8 +333,10 @@ def init_db():
         # 3. SEED INITIAL DATA
         c.execute("SELECT COUNT(*) FROM medicines")
         count_row = c.fetchone()
-        count_val = list(count_row.values())[0] if isinstance(count_row, dict) else count_row[0]
-        
+        count_val = (
+            list(count_row.values())[0] if isinstance(count_row, dict) else count_row[0]
+        )
+
         if count_val == 0:
             print(f"[init_db] Seeding {len(MEDS)} medicines into database...")
             for med in MEDS:
@@ -335,13 +363,16 @@ def init_db():
             conn.commit()
             print(f"[init_db] ✅ Seeded {len(MEDS)} medicines successfully.")
         else:
-            print(f"[init_db] Database already has {count_val} medicines. Skipping seed.")
+            print(
+                f"[init_db] Database already has {count_val} medicines. Skipping seed."
+            )
 
     except Exception as e:
         if conn.is_postgres:
             conn.conn.rollback()
         print(f"[init_db] ❌ Database init error: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         conn.close()
@@ -375,7 +406,10 @@ MEDS = [
             "p500",
             "dolo650",
             "paracet",
-            "पैरासिटामोल", "पॅरासिटामोल", "डोलो", "क्रोसिन"
+            "पैरासिटामोल",
+            "पॅरासिटामोल",
+            "डोलो",
+            "क्रोसिन",
         ],
     },
     {
@@ -397,7 +431,9 @@ MEDS = [
             "combiflam",
             "ibupro",
             "ibuf",
-            "आइबुप्रोफेन", "आयबुप्रोफेन", "कौम्बीफ्लेम"
+            "आइबुप्रोफेन",
+            "आयबुप्रोफेन",
+            "कौम्बीफ्लेम",
         ],
     },
     {
@@ -419,7 +455,8 @@ MEDS = [
             "moxatag",
             "amox",
             "amoxi",
-            "एमोक्सिसिलिन", "नोवामॉक्स"
+            "एमोक्सिसिलिन",
+            "नोवामॉक्स",
         ],
     },
     {
@@ -602,13 +639,11 @@ def find_medicine(query_text):
 
     # 2. Fuzzy match fallback if no exact match
     if not med_row:
-        c.execute(
-            """
+        c.execute("""
             SELECT medicines.*, users.name as company_name 
             FROM medicines 
             LEFT JOIN users ON medicines.company_id = users.id
-        """
-        )
+        """)
         all_meds = c.fetchall()
         best_match = None
         best_score = 0.0
@@ -773,8 +808,12 @@ def add_security_headers(response):
         "frame-src https://accounts.google.com;"
     )
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Permissions-Policy"] = "camera=(self), microphone=(self), geolocation=()"
-    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    response.headers["Permissions-Policy"] = (
+        "camera=(self), microphone=(self), geolocation=()"
+    )
+    response.headers["Strict-Transport-Security"] = (
+        "max-age=63072000; includeSubDomains"
+    )
     return response
 
 
@@ -786,12 +825,16 @@ def health_check():
 
 @app.route("/")
 def serve_index():
-    return render_template("mediscan.html", google_client_id=os.environ.get("GOOGLE_CLIENT_ID"))
+    return render_template(
+        "mediscan.html", google_client_id=os.environ.get("GOOGLE_CLIENT_ID")
+    )
 
 
 @app.route("/company")
 def serve_company():
-    return render_template("company.html", google_client_id=os.environ.get("GOOGLE_CLIENT_ID"))
+    return render_template(
+        "company.html", google_client_id=os.environ.get("GOOGLE_CLIENT_ID")
+    )
 
 
 @app.route("/api/search", methods=["POST"])
@@ -801,31 +844,45 @@ def api_search():
         return jsonify({"found": False, "error": "missing query"}), 400
 
     query = body["query"].strip()
-    
+
     conn = get_db()
     try:
         c = conn.cursor()
 
         # Check for 1D barcode short code first (e.g. MED-A1B2C3)
-        c.execute("""
+        c.execute(
+            """
             SELECT m.* FROM medicines m
             JOIN scan_history s ON m.id = s.med_id
             WHERE s.short_code = ?
-        """, (query,))
+        """,
+            (query,),
+        )
         barcode_match = c.fetchone()
 
         if barcode_match:
-            med_dict = dict(barcode_match) if hasattr(barcode_match, 'keys') or isinstance(barcode_match, dict) else {
-                "id": barcode_match[0], "name": barcode_match[1], "strength": barcode_match[2],
-                "brands": barcode_match[3], "category": barcode_match[4], "safety": barcode_match[5],
-                "uses": barcode_match[6], "dosage": barcode_match[7], "sideEffects": barcode_match[8],
-                "warnings": barcode_match[9], "disposal": barcode_match[10]
-            }
+            med_dict = (
+                dict(barcode_match)
+                if hasattr(barcode_match, "keys") or isinstance(barcode_match, dict)
+                else {
+                    "id": barcode_match[0],
+                    "name": barcode_match[1],
+                    "strength": barcode_match[2],
+                    "brands": barcode_match[3],
+                    "category": barcode_match[4],
+                    "safety": barcode_match[5],
+                    "uses": barcode_match[6],
+                    "dosage": barcode_match[7],
+                    "sideEffects": barcode_match[8],
+                    "warnings": barcode_match[9],
+                    "disposal": barcode_match[10],
+                }
+            )
             try:
                 med_dict["brands"] = json.loads(med_dict.get("brands", "[]"))
             except (json.JSONDecodeError, TypeError):
                 med_dict["brands"] = []
-                
+
             return jsonify({"found": True, "medicine": med_dict})
 
         # Fallback to standard medicine name search
@@ -856,7 +913,11 @@ def _check_rate_limit(endpoint, ip, max_calls, window_seconds):
 
     # Periodic cleanup to cap memory
     if len(_rate_limits) > 500:
-        stale = [k for k, v in _rate_limits.items() if all(now - t > window_seconds * 2 for t in v)]
+        stale = [
+            k
+            for k, v in _rate_limits.items()
+            if all(now - t > window_seconds * 2 for t in v)
+        ]
         for k in stale:
             del _rate_limits[k]
     return False
@@ -864,7 +925,11 @@ def _check_rate_limit(endpoint, ip, max_calls, window_seconds):
 
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
+    ip = (
+        request.headers.get("X-Forwarded-For", request.remote_addr)
+        .split(",")[0]
+        .strip()
+    )
     if _check_rate_limit("chat", ip, max_calls=10, window_seconds=60):
         return jsonify({"error": "Too many requests. Please wait a moment."}), 429
     body = request.get_json(silent=True)
@@ -874,23 +939,43 @@ def api_chat():
     api_key = os.environ.get("GEMINI_API_KEY")
 
     if not api_key:
-        return jsonify({"error": "Missing Server API key."}), 500
+        print("[warning] GEMINI_API_KEY not set; using local fallback")
+        medicine = body.get("medicine")
+        if medicine:
+            med_name = medicine.get("name", "this medicine")
+            fallback_msg = (
+                f"🔄 *Shifting to local server as AI is busy.*\n\n"
+                f"**{med_name} — Local Info:**\n\n"
+                f"• **Uses:** {medicine.get('uses', 'Not specified.')}\n"
+                f"• **Dosage:** {medicine.get('dosage', 'Not specified.')}\n"
+                f"• **Warnings:** {medicine.get('warnings', 'Not specified.')}\n"
+                f"• **Disposal:** {medicine.get('disposal', 'Not specified.')}"
+            )
+        else:
+            fallback_msg = "🔄 *Shifting to local server as AI is busy. Please scan a medicine first to see its info.*"
+        return jsonify({"ok": True, "reply": fallback_msg, "response": fallback_msg})
 
     prompt = body.get("prompt", body.get("query", "")).strip()
     medicine = body.get("medicine")
-    target_lang = body.get("language", "en-IN") # Get the language code
+    target_lang = body.get("language", "en-IN")  # Get the language code
 
     # Map the code to a real word for the prompt
     lang_map = {
-        "hi-IN": "Hindi", "mr-IN": "Marathi", "bn-IN": "Bengali", 
-        "ta-IN": "Tamil", "te-IN": "Telugu", "gu-IN": "Gujarati", 
-        "kn-IN": "Kannada", "ml-IN": "Malayalam", "en-IN": "English"
+        "hi-IN": "Hindi",
+        "mr-IN": "Marathi",
+        "bn-IN": "Bengali",
+        "ta-IN": "Tamil",
+        "te-IN": "Telugu",
+        "gu-IN": "Gujarati",
+        "kn-IN": "Kannada",
+        "ml-IN": "Malayalam",
+        "en-IN": "English",
     }
     spoken_language = lang_map.get(target_lang, "English")
 
     if medicine:
         prompt = f"Context: The user is asking about {json.dumps(medicine)}. User Query: {prompt}"
-    
+
     prompt = prompt[:500]
 
     try:
@@ -912,8 +997,8 @@ def api_chat():
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=sys_prompt,
-                tools=[types.Tool(google_search=types.GoogleSearch())]
-            )
+                tools=[types.Tool(google_search=types.GoogleSearch())],
+            ),
         )
 
         try:
@@ -929,27 +1014,26 @@ def api_chat():
     except Exception as e:
         error_str = str(e)
         print(f"⚠️ Primary AI Failed: {error_str}. Triggering Local Fallback...")
-        
+
         # --- OFFLINE LOCAL FALLBACK (No API Key Needed) ---
         # If the AI fails, we check if the user is currently looking at a medicine.
         # If they are, we pull the answer directly from the local dictionary.
         medicine = body.get("medicine")
-        
+
         if medicine:
             med_name = medicine.get("name", "this medicine")
-            dosage = medicine.get("dosage", "Not specified.")
-            side_effects = medicine.get("sideEffects", "Not specified.")
-            warnings = medicine.get("warnings", "Not specified.")
             fallback_msg = (
-                f"⚠️ *Live AI is busy. Switching to local offline database for {med_name}:*\n\n"
-                f"• **Dosage:** {dosage}\n"
-                f"• **Side Effects:** {side_effects}\n"
-                f"• **Warnings:** {warnings}\n\n"
-                f"*(Please try your custom question again in a minute).* "
+                f"🔄 *Shifting to local server as AI is busy.*\n\n"
+                f"**{med_name} — Local Info:**\n\n"
+                f"• **Uses:** {medicine.get('uses', 'Not specified.')}\n"
+                f"• **Dosage:** {medicine.get('dosage', 'Not specified.')}\n"
+                f"• **Warnings:** {medicine.get('warnings', 'Not specified.')}\n"
+                f"• **Disposal:** {medicine.get('disposal', 'Not specified.')}"
             )
-            
-            return jsonify({"ok": True, "response": fallback_msg, "reply": fallback_msg})
-        
+            return jsonify(
+                {"ok": True, "response": fallback_msg, "reply": fallback_msg}
+            )
+
         else:
             # If they haven't scanned a medicine yet and the AI is down
             busy_msg = "⚠️ The AI network is experiencing high demand. Please scan a medicine directly to view its offline safety records, or try asking again in a minute."
@@ -1231,7 +1315,7 @@ def api_gen_qr():
                     random.choices(string.ascii_uppercase + string.digits, k=6)
                 )
                 short_code = f"MED-{rand_str}"
-                
+
                 try:
                     # Pre-register this serial in the database with 0 scans
                     c.execute(
@@ -1389,8 +1473,8 @@ def api_verify_direct():
     try:
         # Try to decode as Base64 first (This fixes the Google Lens deep link issue)
         # We add padding if necessary to make it valid Base64
-        padded_payload = payload_data + '=' * (-len(payload_data) % 4)
-        decoded_str = base64.urlsafe_b64decode(padded_payload).decode('utf-8')
+        padded_payload = payload_data + "=" * (-len(payload_data) % 4)
+        decoded_str = base64.urlsafe_b64decode(padded_payload).decode("utf-8")
         parsed = json.loads(decoded_str)
     except Exception:
         # If Base64 decoding fails, assume it's already raw JSON (from a 1D barcode search)
@@ -1405,11 +1489,14 @@ def api_verify_direct():
 
     # --- Resolve 1D Barcode Short Codes ---
     if isinstance(parsed, dict) and "short_code" in parsed:
-        c.execute("SELECT med_id FROM scan_history WHERE short_code = ?", (parsed["short_code"],))
+        c.execute(
+            "SELECT med_id FROM scan_history WHERE short_code = ?",
+            (parsed["short_code"],),
+        )
         hist = c.fetchone()
         if hist:
             parsed["med_id"] = hist["med_id"] if isinstance(hist, dict) else hist[0]
-            parsed["sig"] = "bypass" # 1D Barcodes don't have cryptographic signatures
+            parsed["sig"] = "bypass"  # 1D Barcodes don't have cryptographic signatures
 
     if isinstance(parsed, dict) and "med_id" in parsed:
         c.execute(
@@ -1425,9 +1512,9 @@ def api_verify_direct():
 
         if med_row:
             med_dict = dict(med_row)
-            
+
             # --- FIX: Postgres Lowercase Conversion ---
-            # Postgres auto-lowercases column names. We must map it back to camelCase 
+            # Postgres auto-lowercases column names. We must map it back to camelCase
             # so your frontend JavaScript can actually read it.
             if "sideeffects" in med_dict:
                 med_dict["sideEffects"] = med_dict.pop("sideeffects")
@@ -1443,7 +1530,7 @@ def api_verify_direct():
 
             sig = parsed.get("sig", "")
             serial_no = parsed.get("serial_no", "")
-            
+
             # Verify cryptographic signature OR bypass if 1D barcode
             if sig == "bypass":
                 verified = True
@@ -1525,7 +1612,11 @@ def api_get_profile():
         row = c.fetchone()
         if row:
             # Use key-based access for compatibility with both SQLite Row and PostgreSQL RealDictCursor
-            profile_val = row["profile_data"] if isinstance(row, dict) else (row["profile_data"] if hasattr(row, 'keys') else row[0])
+            profile_val = (
+                row["profile_data"]
+                if isinstance(row, dict)
+                else (row["profile_data"] if hasattr(row, "keys") else row[0])
+            )
             if profile_val:
                 return jsonify(json.loads(profile_val))
     except Exception:
@@ -1558,9 +1649,18 @@ def api_save_profile():
 
 @app.route("/api/register", methods=["POST"])
 def api_register():
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
+    ip = (
+        request.headers.get("X-Forwarded-For", request.remote_addr)
+        .split(",")[0]
+        .strip()
+    )
     if _check_rate_limit("register", ip, max_calls=5, window_seconds=300):
-        return jsonify({"error": "Too many registration attempts. Try again in 5 minutes."}), 429
+        return (
+            jsonify(
+                {"error": "Too many registration attempts. Try again in 5 minutes."}
+            ),
+            429,
+        )
 
     body = request.get_json(silent=True)
     if not body:
@@ -1569,10 +1669,10 @@ def api_register():
     name = body.get("name", "").strip()
     email = body.get("email", "").strip().lower()
     password = body.get("password", "")
-    
+
     # Check for Company Invite Code to grant higher privileges
     submitted_code = body.get("invite_code", "").strip()
-    
+
     if COMPANY_INVITE_CODE and submitted_code == COMPANY_INVITE_CODE:
         role = "company"
     else:
@@ -1618,9 +1718,16 @@ def api_register():
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
+    ip = (
+        request.headers.get("X-Forwarded-For", request.remote_addr)
+        .split(",")[0]
+        .strip()
+    )
     if _check_rate_limit("login", ip, max_calls=10, window_seconds=300):
-        return jsonify({"error": "Too many login attempts. Try again in 5 minutes."}), 429
+        return (
+            jsonify({"error": "Too many login attempts. Try again in 5 minutes."}),
+            429,
+        )
 
     body = request.get_json(silent=True)
     if not body:
@@ -1644,7 +1751,11 @@ def api_login():
         role = user["role"]
         # Upgrade to company if valid code provided
         submitted_code = body.get("invite_code", "").strip()
-        if COMPANY_INVITE_CODE and submitted_code == COMPANY_INVITE_CODE and role != "company":
+        if (
+            COMPANY_INVITE_CODE
+            and submitted_code == COMPANY_INVITE_CODE
+            and role != "company"
+        ):
             c2 = conn.cursor()
             c2.execute("UPDATE users SET role = 'company' WHERE id = ?", (user["id"],))
             conn.commit()
@@ -1691,7 +1802,9 @@ def api_stats():
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM medicines")
         med_row = c.fetchone()
-        total_meds = list(med_row.values())[0] if isinstance(med_row, dict) else med_row[0]
+        total_meds = (
+            list(med_row.values())[0] if isinstance(med_row, dict) else med_row[0]
+        )
 
         c.execute("SELECT SUM(scan_count) FROM scan_history")
         sum_row = c.fetchone()
@@ -1711,7 +1824,9 @@ with app.app_context():
 
 
 if __name__ == "__main__":
-    debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() == "true" and not IS_PRODUCTION
+    debug_mode = (
+        os.environ.get("FLASK_DEBUG", "false").lower() == "true" and not IS_PRODUCTION
+    )
     print()
     print("  MediScan server starting...")
     print(f"  Environment: {'PRODUCTION' if IS_PRODUCTION else 'development'}")
@@ -1719,15 +1834,20 @@ if __name__ == "__main__":
     print("  Open http://localhost:5000 in your browser")
     print()
     port = int(os.environ.get("PORT", 5000))
-    
+
     if debug_mode:
         app.run(debug=True, host="0.0.0.0", port=port)
     else:
         try:
             from waitress import serve
+
             print("  Running with production WSGI server (Waitress)...")
             serve(app, host="0.0.0.0", port=port)
         except ImportError:
-            print("  [Warning] Waitress not installed. Falling back to development server.")
-            print("  Run `pip install waitress` for a production deployment on Windows.")
+            print(
+                "  [Warning] Waitress not installed. Falling back to development server."
+            )
+            print(
+                "  Run `pip install waitress` for a production deployment on Windows."
+            )
             app.run(debug=False, host="0.0.0.0", port=port)
