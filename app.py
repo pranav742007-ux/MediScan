@@ -993,7 +993,7 @@ def api_chat():
 
         # Use the latest Gemini 2.5 Pro for superior medical reasoning
         response = client.models.generate_content(
-            model="gemini-2.5-pro-preview-05-06",
+            model="gemini-1.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=sys_prompt,
