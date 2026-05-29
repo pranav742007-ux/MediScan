@@ -19,6 +19,7 @@ load_dotenv()
 try:
     from google import genai as genai_sdk
     from google.genai import types
+
     HAS_GENAI = True
 except ImportError:
     HAS_GENAI = False
